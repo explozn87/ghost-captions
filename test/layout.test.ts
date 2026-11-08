@@ -728,3 +728,70 @@ describe('layout: ambient settle after steady time (task 23.5)', () => {
     expect(edgeFogs([ev], 10, defaultSettings)[0]!.settled).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Task 24.1: one fog per occurrence — merge simultaneous same-group,
+// same-edge ambient events into a single fog.
+// ---------------------------------------------------------------------------
+
+describe('edgeFogs: one fog per occurrence (task 24.1)', () => {
+  it('merges two simultaneous music events on the same edge into ONE fog', () => {
+    // The Sintel defect: a long music cue split by buildEvents into two touching
+    // events showed two "Music" top-band slots at 13 s. All music families are
+    // one occurrence group, so two overlapping music events on the same edge
+    // must become a single fog.
+    const loud = makeEvent({
+      id: 'm1', family: 'tenseMusic', side: 'centre-unknown',
+      start: 0, end: 10, loudness: 0.9, ominous: 0.8, trend: 'rising',
+    });
+    const quiet = makeEvent({
+      id: 'm2', family: 'calmMusic', side: 'centre-unknown',
+      start: 0, end: 10, loudness: 0.4, ominous: 0.3, trend: 'steady',
+    });
+    const fogs = edgeFogs([loud, quiet], 2, defaultSettings);
+    expect(fogs).toHaveLength(1);
+    // The merged fog is named by its loudest member (tenseMusic → its label).
+    const f = fogs[0]!;
+    expect(f.family).toBe('tenseMusic');
+    // Only one top slot remains — no two "Music" plates side by side.
+    expect(f.topCount).toBe(1);
+  });
+
+  it('the merged fog opacity is the max of its members', () => {
+    const a = makeEvent({ id: 'a', family: 'tenseMusic', side: 'centre-unknown', start: 0, end: 10, loudness: 0.9, ominous: 0.9, trend: 'steady' });
+    const b = makeEvent({ id: 'b', family: 'calmMusic', side: 'centre-unknown', start: 0, end: 10, loudness: 0.2, ominous: 0.1, trend: 'steady' });
+    const merged = edgeFogs([a, b], 5, defaultSettings)[0]!;
+    const aOnly = edgeFogs([a], 5, defaultSettings)[0]!;
+    const bOnly = edgeFogs([b], 5, defaultSettings)[0]!;
+    expect(merged.opacity).toBeCloseTo(Math.max(aOnly.opacity, bOnly.opacity), 10);
+  });
+
+  it('a settled member and a fresh member merge to a not-yet-settled fog', () => {
+    // A long steady wind (settled by t=10) plus a fresh wind burst keep the
+    // band awake: the merged fog is not settled while any member is fresh.
+    const steady = makeEvent({ id: 's', family: 'wind', side: 'left', start: 0, end: 30, loudness: 0.8, trend: 'steady' });
+    const fresh = makeEvent({ id: 'f', family: 'wind', side: 'left', start: 9.5, end: 20, loudness: 0.8, trend: 'rising' });
+    const merged = edgeFogs([steady, fresh], 10, defaultSettings)[0]!;
+    expect(merged.settled).toBe(false);
+  });
+
+  it('does NOT merge the same group on different edges (left vs top)', () => {
+    // A measured side names a distinct source, so a left music and a no-side
+    // (top) music stay as two fogs.
+    const left = makeEvent({ id: 'l', family: 'tenseMusic', side: 'left', start: 0, end: 10, loudness: 0.7, trend: 'steady' });
+    const none = makeEvent({ id: 'n', family: 'calmMusic', side: 'centre-unknown', start: 0, end: 10, loudness: 0.7, trend: 'steady' });
+    const fogs = edgeFogs([left, none], 2, defaultSettings);
+    expect(fogs).toHaveLength(2);
+    expect(new Set(fogs.map((f) => f.edge))).toEqual(new Set(['left', 'top']));
+  });
+
+  it('does NOT merge different groups on the same edge (wind vs rain)', () => {
+    // Wind and rain are different occurrence groups, so two no-side fogs stay
+    // distinct and take side-by-side top slots (task 23.4).
+    const wind = makeEvent({ id: 'w', family: 'wind', side: 'centre-unknown', start: 0, end: 10, loudness: 0.6, trend: 'steady' });
+    const rain = makeEvent({ id: 'r', family: 'rain', side: 'centre-unknown', start: 0, end: 10, loudness: 0.6, trend: 'steady' });
+    const fogs = edgeFogs([wind, rain], 2, defaultSettings);
+    expect(fogs).toHaveLength(2);
+    expect(fogs.every((f) => f.topCount === 2)).toBe(true);
+  });
+});

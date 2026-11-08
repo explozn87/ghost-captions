@@ -11,11 +11,13 @@ import {
   EDGE_MARGIN,
   LABEL_GAP,
   AMBIENT_SPRITE_MIN_OPACITY,
+  TOP_BAND_FRAC,
   type LabelRect,
   type Ctx2D,
   type SpriteImageLoader,
 } from '../src/overlay/draw.ts';
 import type { EdgeFog, Family, GhostSprite } from '../src/shared/types.ts';
+import { ghostConfig } from '../src/config/ghost.config.ts';
 
 // Task 8.2 (extended in task 16.3 & 16.5): `draw()` paints sprites and edge
 // fogs on a 2D canvas. We test it against a small recording fake context (no
@@ -853,5 +855,108 @@ describe('draw: arrival pop grows the band sprite (task 23.5)', () => {
     if (plainImg && arrivingImg) {
       expect(arrivingImg.args[4]).toBe(plainImg.args[4]);
     }
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Task 24: top band polish.
+// ---------------------------------------------------------------------------
+
+describe('draw: top band is one full-width gradient (task 24.2)', () => {
+  it('a single top fog paints one gradient rect across the FULL frame width', () => {
+    const W = 1000;
+    const H = 600;
+    const ctx = makeFakeCtx(W, H);
+    draw(ctx, [], [fog({ family: 'wind', edge: 'top', label: 'wind', texture: 'none' })], 0, false, {
+      loader: silhouetteOnlyLoader,
+    });
+    // With no texture the only fillRects are the gradient band and the label
+    // plate. The band gradient must span x=0 to x=W (no per-slot rectangle).
+    const bandRects = ctx.calls.filter(
+      (c) => c.op === 'fillRect' && c.args[0] === 0 && c.args[2] === W,
+    );
+    expect(bandRects.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('two top fogs paint the band gradient only ONCE across the full width (no seam at W/2)', () => {
+    const W = 1000;
+    const H = 600;
+    const ctx = makeFakeCtx(W, H);
+    draw(
+      ctx,
+      [],
+      [
+        fog({ family: 'wind', edge: 'top', label: 'wind', texture: 'none', topSlot: 0, topCount: 2 }),
+        fog({ family: 'rain', edge: 'top', label: 'rain', texture: 'none', topSlot: 1, topCount: 2 }),
+      ],
+      0,
+      false,
+      { loader: silhouetteOnlyLoader },
+    );
+    // The full-width gradient band is drawn once (by slot 0), not per slot, so
+    // there is no partial-width rect that would seam at W/2.
+    const fullWidthBand = ctx.calls.filter(
+      (c) => c.op === 'fillRect' && c.args[0] === 0 && c.args[2] === W,
+    );
+    expect(fullWidthBand.length).toBe(1);
+    // No band rect starts at the slot boundary W/2 (the old per-slot seam).
+    const seamRect = ctx.calls.find(
+      (c) => c.op === 'fillRect' && c.args[0] === W / 2 && c.args[2] === W / 2,
+    );
+    expect(seamRect).toBeUndefined();
+  });
+});
+
+describe('draw: top band is shallow and holds its texture (task 24.3)', () => {
+  it('TOP_BAND_FRAC is the shallow 0.18 from config, not the old 0.3', () => {
+    expect(TOP_BAND_FRAC).toBe(ghostConfig.topBandFrac.value);
+    expect(TOP_BAND_FRAC).toBeCloseTo(0.18, 10);
+  });
+
+  it('the band gradient height stays within TOP_BAND_FRAC of the frame', () => {
+    const W = 1000;
+    const H = 600;
+    const ctx = makeFakeCtx(W, H);
+    draw(ctx, [], [fog({ family: 'wind', edge: 'top', label: 'wind', texture: 'none' })], 0, false, {
+      loader: silhouetteOnlyLoader,
+    });
+    const band = ctx.calls.find((c) => c.op === 'fillRect' && c.args[0] === 0 && c.args[2] === W)!;
+    const bandH = band.args[3] as number;
+    expect(bandH).toBeLessThanOrEqual(H * TOP_BAND_FRAC + 1e-6);
+  });
+
+  it('wind texture shapes stay inside the shallow top band', () => {
+    const W = 1000;
+    const H = 600;
+    const ctx = makeFakeCtx(W, H);
+    draw(ctx, [], [fog({ family: 'wind', edge: 'top', label: 'wind', texture: 'windStreaks', textureDensity: 0.9 })], 0, false, {
+      loader: silhouetteOnlyLoader,
+    });
+    const bandBottom = Math.min(H * (1 - 0.18), H * TOP_BAND_FRAC);
+    // Every lavender texture rect's bottom edge stays within the band.
+    const texRects = ctx.calls.filter(
+      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('205,200,240'),
+    );
+    expect(texRects.length).toBeGreaterThan(0);
+    for (const r of texRects) {
+      const y = r.args[1] as number;
+      const h = r.args[3] as number;
+      expect(y + h).toBeLessThanOrEqual(bandBottom + 1e-6);
+    }
+  });
+
+  it('the band sprite sits inside the shallow top band', () => {
+    const W = 1000;
+    const H = 600;
+    const loader = makeImageLoader();
+    const ctx = makeFakeCtx(W, H);
+    draw(ctx, [], [fog({ family: 'wind', edge: 'top', label: 'wind' })], 0, false, { loader });
+    const image = ctx.calls.find((c) => c.op === 'drawImage')!;
+    const dy = image.args[2] as number;
+    const dh = image.args[4] as number;
+    const bandBottom = Math.min(H * (1 - 0.18), H * TOP_BAND_FRAC);
+    // The sprite box bottom stays within the shallow band.
+    expect(dy + dh).toBeLessThanOrEqual(bandBottom + 1e-6);
   });
 });

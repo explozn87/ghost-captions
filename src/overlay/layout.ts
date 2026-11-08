@@ -41,6 +41,7 @@ import type { EdgeFog, FogEdge, FogTexture, GhostSprite, Side, SoundEvent } from
 import { tables, type Lang, type Strings } from '../i18n/index.ts';
 import { soundNoun } from '../i18n/soundLabel.ts';
 import { ambientTextureOf, ghostConfig, isAmbientFamily, type GhostConfig } from '../config/ghost.config.ts';
+import { groupKey } from '../events/occurrences.ts';
 
 /** The drawable area the overlay covers, in CSS pixels. */
 export interface Viewport {
@@ -624,6 +625,14 @@ function fogSpriteScaleAt(event: SoundEvent, t: number, reducedMotion: boolean, 
  * Task 23.5: each fog carries a `spriteScale` (arrival pop) and a `settled`
  * flag so `draw` can pop the band sprite on arrival and fade/thin the band once
  * the ambient sound has been steady.
+ *
+ * Task 24.1: simultaneously active ambient events that belong to the same
+ * occurrence group (all music families count as one group — see `groupKey`)
+ * AND cover the same edge are merged into ONE fog: its opacity is the max of
+ * the members, its label and texture come from the loudest member. The Sintel
+ * demo showed two top-band slots "Music, getting louder" and "Music" side by
+ * side at 13 s because `buildEvents` split the long music cue; merging folds
+ * those back into one fog so only one "Music" plate is ever on screen.
  */
 export function edgeFogs(
   events: readonly SoundEvent[],
@@ -632,7 +641,21 @@ export function edgeFogs(
   cfg: GhostConfig = ghostConfig,
 ): EdgeFog[] {
   const s = tables[settings.lang] ?? tables.en;
-  const raw: EdgeFog[] = [];
+
+  // The raw per-event fog contributions before merging (task 24.1): each one
+  // carries the smoothed opacity, texture density and the event it came from,
+  // so the merge can pick the loudest member and max the opacity.
+  interface RawFog {
+    event: SoundEvent;
+    edge: FogEdge;
+    opacity: number;
+    textureDensity: number;
+    settled: boolean;
+    spriteScale: number;
+    arriving: boolean;
+  }
+
+  const raw: RawFog[] = [];
   for (const event of events) {
     if (event.isSpeech) continue;
     if (!isAmbientFamily(event.family, cfg)) continue;
@@ -650,28 +673,73 @@ export function edgeFogs(
       fogOpacity *= cfg.settleOpacityFactor.value;
     }
     raw.push({
-      family: event.family,
+      event,
       edge: fogEdgeFor(event.side),
       opacity: fogOpacity,
-      label: spriteLabel(event, s, settings.lang),
-      texture: ambientTextureOf(event.family, cfg) as FogTexture,
       textureDensity,
-      spriteScale: fogSpriteScaleAt(event, t, settings.reducedMotion, cfg),
       settled,
+      spriteScale: fogSpriteScaleAt(event, t, settings.reducedMotion, cfg),
+      arriving: isArriving(event, t, cfg),
+    });
+  }
+
+  // Merge same-group, same-edge fogs into one (task 24.1). The group key folds
+  // all music families together, so overlapping music fragments become a single
+  // "Music" fog; the edge is kept in the key so a left and a top music fog stay
+  // distinct (they name different sources). Each bucket keeps insertion order so
+  // the result is deterministic.
+  const buckets = new Map<string, RawFog[]>();
+  for (const r of raw) {
+    const key = `${groupKey(r.event.family)}|${r.edge}`;
+    const list = buckets.get(key);
+    if (list) list.push(r);
+    else buckets.set(key, [r]);
+  }
+
+  const merged: EdgeFog[] = [];
+  for (const members of buckets.values()) {
+    // The loudest member names the fog (its family → sprite/texture/label),
+    // matching how an occurrence's loudest event names it (task 23.1). Ties
+    // break on the earlier member for determinism.
+    let loudest = members[0]!;
+    let maxOpacity = members[0]!.opacity;
+    let maxTextureDensity = members[0]!.textureDensity;
+    let maxSpriteScale = members[0]!.spriteScale;
+    let anyArriving = members[0]!.arriving;
+    // A merged fog has settled only when every member has settled: a fresh
+    // member keeps the band awake.
+    let allSettled = members[0]!.settled;
+    for (const m of members) {
+      if (m.opacity > maxOpacity) maxOpacity = m.opacity;
+      if (m.textureDensity > maxTextureDensity) maxTextureDensity = m.textureDensity;
+      if (m.spriteScale > maxSpriteScale) maxSpriteScale = m.spriteScale;
+      if (m.arriving) anyArriving = true;
+      if (!m.settled) allSettled = false;
+      if (m.event.loudness > loudest.event.loudness) loudest = m;
+    }
+    merged.push({
+      family: loudest.event.family,
+      edge: loudest.edge,
+      opacity: maxOpacity,
+      label: spriteLabel(loudest.event, s, settings.lang),
+      texture: ambientTextureOf(loudest.event.family, cfg) as FogTexture,
+      textureDensity: maxTextureDensity,
+      spriteScale: maxSpriteScale,
+      settled: allSettled,
       // Filled in below once we know how many top fogs there are.
       topSlot: 0,
       topCount: 1,
-      arriving: isArriving(event, t, cfg),
+      arriving: anyArriving,
     });
   }
 
   // Assign side-by-side slots to the top-band fogs (task 23.4), in a stable
   // order, so several active ambient sounds without a side never stack on top
   // of each other. Side fogs keep slot 0 of a single-slot band.
-  const topFogs = raw.filter((f) => f.edge === 'top');
+  const topFogs = merged.filter((f) => f.edge === 'top');
   topFogs.forEach((f, i) => {
     f.topSlot = i;
     f.topCount = topFogs.length;
   });
-  return raw;
+  return merged;
 }

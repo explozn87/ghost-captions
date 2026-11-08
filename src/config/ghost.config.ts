@@ -130,6 +130,13 @@ export interface GhostConfig {
   settleAfterSec: Tuned;
   settleOpacityFactor: Tuned;
   settleTextureFactor: Tuned;
+  /**
+   * The fraction of the frame height the shared top ambient band occupies
+   * (task 24.3). The band holds a no-side ambient fog's sprite, label and
+   * texture. Shallower than before so the band stays above faces in typical
+   * framing.
+   */
+  topBandFrac: Tuned;
 }
 
 /**
@@ -348,6 +355,10 @@ export const ghostConfig = {
   settleTextureFactor: {
     value: 0.5,
     why: 'A settled ambient band halves its texture density (task 23.5), so a steady wind or rain has visibly calmer motion once it has settled, matching the fade of the band itself.',
+  },
+  topBandFrac: {
+    value: 0.18,
+    why: 'The shared top ambient band is 18% of the frame height (task 24.3), down from the earlier 0.3: shallow enough to stay above faces in typical framing while still holding a no-side ambient fog\'s sprite, label and texture. Its sprite and texture stay inside the band; only the label plate may extend just below it, never into the caption band.',
   },
 } satisfies GhostConfig;
 

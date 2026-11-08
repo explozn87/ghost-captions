@@ -30,6 +30,7 @@
 
 import type { EdgeFog, Family, FogTexture, GhostSprite } from '../shared/types.ts';
 import { FOG_CLEAR_CENTRE, baseRadiusFrac, CAPTION_BAND } from './layout.ts';
+import { ghostConfig } from '../config/ghost.config.ts';
 
 /**
  * A minimal 2D drawing surface. Declared structurally (not as
@@ -737,27 +738,33 @@ function drawEdgeFog(
     // into equal slots so their sprites + labels sit side by side (task 23.4).
     const count = Math.max(1, fog.topCount);
     const slot = Math.min(fog.topSlot, count - 1);
-    // Keep the band clear of the central face column only when it is the sole
-    // occupant and the band spans the whole width; splitting into slots already
-    // spreads them, so each slot gets an equal share across the full width.
     const slotW = W / count;
     const slotX0 = slot * slotW;
     const slotCX = slotX0 + slotW / 2;
 
-    // Vertical gradient fading down from the top edge within this slot.
-    const grad = ctx.createLinearGradient(0, 0, 0, topBandH);
-    grad.addColorStop(0, `rgba(${FOG_RGB},${fog.opacity.toFixed(3)})`);
-    grad.addColorStop(1, `rgba(${FOG_RGB},0)`);
-    ctx.save();
-    ctx.fillStyle = grad as unknown as CanvasGradient;
-    ctx.globalAlpha = 1;
-    ctx.fillRect(slotX0, 0, slotW, topBandH);
-    ctx.restore();
+    // Task 24.2: the band is ONE vertical gradient across the FULL frame width,
+    // so there is no hard vertical edge between slots. It is painted once — by
+    // the first slot only — spanning the whole width; the slots then only
+    // position each fog's sprite, label and texture. The old code painted a
+    // per-slot rectangle, which left a visible seam at the slot boundary.
+    if (slot === 0) {
+      const grad = ctx.createLinearGradient(0, 0, 0, topBandH);
+      grad.addColorStop(0, `rgba(${FOG_RGB},${fog.opacity.toFixed(3)})`);
+      grad.addColorStop(1, `rgba(${FOG_RGB},0)`);
+      ctx.save();
+      ctx.fillStyle = grad as unknown as CanvasGradient;
+      ctx.globalAlpha = 1;
+      ctx.fillRect(0, 0, W, topBandH);
+      ctx.restore();
+    }
 
-    // Texture inside this slot's band.
+    // Texture stays inside this slot's share of the band (task 24.3): the band
+    // height is clamped to TOP_BAND_FRAC so the shapes never spill below it.
     drawFogTexture(ctx, fog, slotX0, slotW, topBandH, time, reducedMotion);
 
-    // One sprite and one label for this slot, sprite above the label.
+    // One sprite and one label for this slot, sprite above the label, both kept
+    // inside the band (the label plate may extend just below it, never into the
+    // caption band — placeLabels enforces that).
     const spriteCY = topBandH * 0.42;
     drawAmbientSprite(ctx, fog.family, slotCX, spriteCY, ambientRadius, spriteOpacity, loader);
     const labelTop = spriteCY + ambientRadius + LABEL_BELOW_GAP;
@@ -787,8 +794,8 @@ function drawEdgeFog(
   return [measureLabel(ctx, fog.label, bandCentreX, labelTop, 1, reducedMotion && fog.arriving)];
 }
 
-/** Fraction of the frame height the shared top ambient band occupies (task 23.4). */
-const TOP_BAND_FRAC = 0.3;
+/** Fraction of the frame height the shared top ambient band occupies (task 24.3, from config). */
+export const TOP_BAND_FRAC = ghostConfig.topBandFrac.value;
 
 /**
  * Draw the per-family motion texture inside one fog band (task 18.2, extended
@@ -838,15 +845,21 @@ function drawFogTexture(
     const speed = texture === 'notesTense' ? 50 : 22;
     const glyph = texture === 'notesTense' ? '♫' : '♪';
     const size = (texture === 'notesTense' ? 0.09 : 0.11) * bandH;
-    ctx.font = `${Math.max(10, Math.round(size))}px sans-serif`;
+    const glyphPx = Math.max(10, Math.round(size));
+    ctx.font = `${glyphPx}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    // Glyphs stay inside the band (task 24.3): the drawable vertical range is
+    // inset by half the glyph height so a drifting note never crosses the band
+    // edge. Middle baseline means the glyph spans ±glyphPx/2 around y.
+    const yMin = glyphPx / 2;
+    const ySpan = Math.max(0, bandH - glyphPx);
     for (let i = 0; i < count; i++) {
       const fracX = (i + 0.5) / count;
       const x = bandX + fracX * bandW;
-      const baseY = ((i * 0.37) % 1) * bandH;
-      const drift = reducedMotion ? 0 : ((time * speed + i * 40) % bandH);
-      const y = (baseY + drift) % bandH;
+      const baseY = ((i * 0.37) % 1) * ySpan;
+      const drift = reducedMotion ? 0 : ((time * speed + i * 40) % Math.max(1, ySpan));
+      const y = yMin + ((baseY + drift) % Math.max(1, ySpan));
       ctx.fillText(glyph, x, y);
     }
     ctx.restore();
@@ -857,22 +870,26 @@ function drawFogTexture(
     const fracX = (i + 0.5) / count;
     const fracY = (i * 0.37) % 1;
     const baseX = bandX + fracX * bandW;
-    const baseY = fracY * bandH;
 
     if (texture === 'windStreaks') {
-      // Soft horizontal streaks drifting across the band.
+      // Soft horizontal streaks drifting across the band. The streak height is
+      // small, so the top is placed within [0, bandH - h] to stay inside the
+      // band (task 24.3).
+      const h = Math.max(2, bandH * 0.03);
+      const yTop = fracY * Math.max(0, bandH - h);
       const drift = reducedMotion ? 0 : ((time * 40 + i * 30) % bandW);
       const x = bandX + ((fracX * bandW + drift) % bandW);
       const w = bandW * 0.5;
-      const h = Math.max(2, bandH * 0.03);
-      bandRect(x, baseY, w, h);
+      bandRect(x, yTop, w, h);
     } else if (texture === 'rainStreaks') {
-      // Thin falling streaks.
-      const fall = reducedMotion ? 0 : ((time * 120 + i * 50) % bandH);
-      const y = (baseY + fall) % bandH;
-      const w = Math.max(1, bandW * 0.02);
+      // Thin falling streaks. The falling top is kept within [0, bandH - h] so
+      // a streak never crosses the band's lower edge (task 24.3).
       const h = bandH * 0.18;
-      bandRect(baseX, y, w, h);
+      const span = Math.max(1, bandH - h);
+      const fall = reducedMotion ? 0 : ((time * 120 + i * 50) % span);
+      const yTop = (fracY * span + fall) % span;
+      const w = Math.max(1, bandW * 0.02);
+      bandRect(baseX, yTop, w, h);
     } else if (texture === 'thunderSwell') {
       // One slow edge swell: a single broad band whose width breathes slowly,
       // never a flash (Req 10.3). Only one shape regardless of density.
