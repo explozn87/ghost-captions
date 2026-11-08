@@ -100,6 +100,16 @@ export const ko: Strings = {
     replaceSubtitles: '대사 자막 교체',
     burnedInSubtitles: '영상에 자막이 입혀져 있음',
 
+    showGhostsWhen: '유령 표시',
+    showWhenAlways: '항상 (소리를 들을 수 없음)',
+    showWhenAuto: '소리를 껐을 때만',
+    showWhenNever: '표시 안 함',
+    showWhenHelp:
+      '소리가 재생돼도 들을 수 없다면 “항상”을 선택하세요. 기본값은 영상이 음소거일 때만 유령이 나타나고, 소리를 켜면 쉽니다.',
+    chipAlways: '유령 항상 켜짐',
+    chipSoundOff: '🔇 소리 꺼짐 — 유령 등장',
+    chipSoundOn: '🔊 소리 켜짐 — 유령 쉬는 중',
+
     colTime: '시간',
     colSound: '소리',
     colDirection: '방향',

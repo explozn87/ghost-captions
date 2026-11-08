@@ -104,6 +104,20 @@ export interface Strings {
     /** Settings toggle for videos with burned-in subtitles (task 19.3). */
     burnedInSubtitles: string;
 
+    // Show-when: ghosts on when the sound is off (task 21).
+    /** Settings label for the show-when choice (task 21.1). */
+    showGhostsWhen: string;
+    /** Show-when option labels (task 21.1). */
+    showWhenAlways: string;
+    showWhenAuto: string;
+    showWhenNever: string;
+    /** A one-line explanation under the show-when control; `always` first (task 21.1). */
+    showWhenHelp: string;
+    /** Status-chip messages (task 21.2); text carries the meaning, not only the icon. */
+    chipAlways: string;
+    chipSoundOff: string;
+    chipSoundOn: string;
+
     // Event list columns/labels (Requirement 7.2).
     colTime: string;
     colSound: string;

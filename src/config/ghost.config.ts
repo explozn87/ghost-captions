@@ -99,6 +99,12 @@ export interface GhostConfig {
    * edge fog (task 16.3) and are not listed here.
    */
   motionByFamily: { value: Record<Family, MotionKind>; why: string };
+  /**
+   * How long the sound overlay (ghosts, edge fog, sound labels) takes to fade
+   * out when the viewer unmutes, and back in when they mute again, in the
+   * `auto` show-when mode (task 21.1). Dialogue subtitles are never affected.
+   */
+  overlayFadeSeconds: Tuned;
 }
 
 /**
@@ -289,6 +295,10 @@ export const ghostConfig = {
       calmMusic: 'hover',
     },
     why: 'Motion matches how each sound behaves (task 17.3): vehicles and footsteps CROSS the frame when a side change is measured (they travel through the scene); gunshot/impact/knock/door/glass/scream are sharp point events that EDGE-REACT with one scale-pop at the source edge then withdraw; singing/laughter/crying/siren/animal/fire/unknown HOVER with a slow sway as they have no single arrival. Ambient families are drawn as edge fog and never read this table.',
+  },
+  overlayFadeSeconds: {
+    value: 0.6,
+    why: 'In the default `auto` show-when mode the sound overlay fades out over 0.6 s when the viewer unmutes and fades back in over 0.6 s when they mute again (task 21.1). Long enough to read as a deliberate "the ghosts are resting because you can hear now" rather than a flicker, short enough that a judge toggling mute sees the effect at once. Dialogue subtitles ignore this and stay on in every mode.',
   },
 } satisfies GhostConfig;
 

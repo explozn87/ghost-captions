@@ -270,6 +270,8 @@ function WatchScreen({
         track={track}
         dialogue={dialogue}
         settings={settings}
+        strings={strings}
+        onOpenShowWhen={() => setShowSettings(true)}
         onTimeUpdate={onTime}
         registerSeek={registerSeek}
       />

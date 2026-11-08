@@ -101,6 +101,16 @@ export const en: Strings = {
     replaceSubtitles: 'Replace dialogue subtitles',
     burnedInSubtitles: 'Video has burned-in subtitles',
 
+    showGhostsWhen: 'Show ghosts',
+    showWhenAlways: 'Always (I cannot hear the sound)',
+    showWhenAuto: 'Only when the sound is off',
+    showWhenNever: 'Never',
+    showWhenHelp:
+      'Choose “Always” if you cannot hear the sound even when it plays. By default the ghosts appear only while the video is muted and rest when you turn the sound on.',
+    chipAlways: 'Ghosts always on',
+    chipSoundOff: '🔇 Sound off — ghosts on',
+    chipSoundOn: '🔊 Sound on — ghosts resting',
+
     colTime: 'Time',
     colSound: 'Sound',
     colDirection: 'Direction',

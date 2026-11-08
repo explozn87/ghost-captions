@@ -124,6 +124,13 @@ describe('ghost.config (task 2.2)', () => {
     expect(ghostConfig.loudScaleMin.value).toBeLessThan(ghostConfig.loudScaleMax.value);
   });
 
+  it('carries the overlay fade duration with a why, in a sane range (task 21.1)', () => {
+    expectHasWhy(ghostConfig.overlayFadeSeconds);
+    expect(ghostConfig.overlayFadeSeconds.value).toBe(0.6);
+    expect(ghostConfig.overlayFadeSeconds.value).toBeGreaterThan(0);
+    expect(ghostConfig.overlayFadeSeconds.value).toBeLessThanOrEqual(2);
+  });
+
   it('gives every family a motion kind with a why (task 17.3)', () => {
     const kinds = ghostConfig.motionByFamily.value;
     expect(Object.keys(kinds).sort()).toEqual([...ALL_FAMILIES].sort());

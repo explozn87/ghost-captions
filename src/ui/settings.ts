@@ -13,6 +13,23 @@ import type { Family, SoundEvent } from '../shared/types.ts';
 import type { Lang, LoudnessBand, OminousBand } from '../i18n/index.ts';
 import type { OverlaySettings } from '../overlay/layout.ts';
 
+/**
+ * When the sound overlay (ghosts, edge fog, sound labels) is shown (task 21.1):
+ *   - `auto`   — shown only while the video is muted or at zero volume, so the
+ *                ghosts come on when the sound is off and rest when you can
+ *                hear; the metaphor itself ("captions for when the sound is
+ *                off") is the pitch;
+ *   - `always` — shown whatever the volume, for viewers who cannot hear the
+ *                sound even when it plays (deaf and hard-of-hearing viewers);
+ *   - `never`  — the overlay is off; only dialogue subtitles and the text list
+ *                remain.
+ * Dialogue subtitles (task 19) are never affected by this choice.
+ */
+export type ShowWhen = 'auto' | 'always' | 'never';
+
+/** The show-when choices in display order; `always` is explained first (task 21.1). */
+export const SHOW_WHEN_CHOICES: ShowWhen[] = ['always', 'auto', 'never'];
+
 /** The user/OS preferences the watch screen holds. */
 export interface Settings {
   lang: Lang;
@@ -27,6 +44,12 @@ export interface Settings {
    * stay clear of the baked-in text.
    */
   burnedInSubtitles: boolean;
+  /**
+   * When the sound overlay is shown (task 21.1): `auto` shows ghosts only while
+   * the sound is off, `always` keeps them on, `never` hides them. Default
+   * `auto`. Dialogue subtitles ignore this.
+   */
+  showWhen: ShowWhen;
 }
 
 /** Sensible defaults; reduced motion follows the OS at first mount. */
@@ -37,6 +60,7 @@ export function defaultSettings(lang: Lang, prefersReducedMotion: boolean): Sett
     sizeScale: 1,
     mutedFamilies: new Set<Family>(),
     burnedInSubtitles: false,
+    showWhen: 'auto',
   };
 }
 
@@ -123,4 +147,40 @@ export function currentEventIndex(events: readonly SoundEvent[], t: number): num
     if (e.start <= t && e.end > t) idx = i;
   }
   return idx;
+}
+
+/** A video is "silent" to the viewer when muted or at zero volume (task 21.1). */
+export function isVideoSilent(muted: boolean, volume: number): boolean {
+  return muted || volume <= 0;
+}
+
+/**
+ * Whether the sound overlay (ghosts, edge fog, sound labels) should be shown,
+ * given the show-when choice and whether the video is currently silent (task
+ * 21.1). This is the pure decision the Player animates towards; it never
+ * touches dialogue subtitles, which stay on regardless.
+ *   - `always` → always shown;
+ *   - `never`  → never shown;
+ *   - `auto`   → shown only while the video is silent (muted or zero volume).
+ */
+export function overlayShouldShow(showWhen: ShowWhen, silent: boolean): boolean {
+  if (showWhen === 'always') return true;
+  if (showWhen === 'never') return false;
+  return silent;
+}
+
+/**
+ * Which status-chip message the player shows for the current state (task 21.2):
+ *   - `always`     → "Ghosts always on";
+ *   - `soundOff`   → "🔇 Sound off — ghosts on" (auto/never while silent);
+ *   - `soundOn`    → "🔊 Sound on — ghosts resting" (auto/never while audible).
+ * The caller looks the key up in the i18n table so the text (not only the icon)
+ * carries the information in both languages.
+ */
+export type ChipState = 'always' | 'soundOff' | 'soundOn';
+
+/** The chip state for a given show-when choice and silence (task 21.2). */
+export function chipStateFor(showWhen: ShowWhen, silent: boolean): ChipState {
+  if (showWhen === 'always') return 'always';
+  return silent ? 'soundOff' : 'soundOn';
 }

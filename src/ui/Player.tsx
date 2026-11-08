@@ -14,14 +14,22 @@
 // them and keeps the canvas's backing store matched to its CSS size for crisp
 // output.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DialogueCue, EventTrack } from '../shared/types.ts';
 import { activeEvents } from '../events/buildEvents.ts';
 import { layout, edgeFogs, fogDecayDuration } from '../overlay/layout.ts';
 import { draw, preloadSpriteImages, measureDialogueBandFrac } from '../overlay/draw.ts';
 import { activeDialogueCue } from '../subtitles/parse.ts';
+import { ghostConfig } from '../config/ghost.config.ts';
+import type { Strings } from '../i18n/index.ts';
 import type { Settings } from './settings.ts';
-import { toOverlaySettings, BURNED_IN_CAPTION_BAND } from './settings.ts';
+import {
+  toOverlaySettings,
+  BURNED_IN_CAPTION_BAND,
+  isVideoSilent,
+  overlayShouldShow,
+  chipStateFor,
+} from './settings.ts';
 
 export interface PlayerProps {
   /** Object URL for the local media; created and revoked by the parent. */
@@ -30,6 +38,10 @@ export interface PlayerProps {
   /** Dialogue subtitle cues to show in the caption band (task 19.2). */
   dialogue?: readonly DialogueCue[];
   settings: Settings;
+  /** UI strings for the status chip (task 21.2). */
+  strings: Strings;
+  /** Open the Settings panel at the show-when control when the chip is clicked (task 21.2). */
+  onOpenShowWhen?: () => void;
   /** Reports the current playback time so sibling panels can highlight. */
   onTimeUpdate?: (t: number) => void;
   /**
@@ -54,6 +66,8 @@ export function Player({
   track,
   dialogue,
   settings,
+  strings,
+  onOpenShowWhen,
   onTimeUpdate,
   registerSeek,
 }: PlayerProps): JSX.Element {
@@ -70,6 +84,19 @@ export function Player({
   const onTimeRef = useRef<PlayerProps['onTimeUpdate']>(onTimeUpdate);
   onTimeRef.current = onTimeUpdate;
 
+  // Show-when state (task 21.1/21.2): whether the video is currently silent to
+  // the viewer (muted or zero volume), driven by the `volumechange` event (no
+  // polling), and the chip the player shows. `chipVisible` fades the chip in
+  // for 2 s after a change and while the pointer is over the player (task 21.2).
+  const [silent, setSilent] = useState(true);
+  const [chipVisible, setChipVisible] = useState(true);
+  const silentRef = useRef(true);
+  silentRef.current = silent;
+  // The animated overlay opacity (0..1), read and written by the draw loop so
+  // it fades independently of React renders.
+  const overlayAlphaRef = useRef(1);
+  const lastFrameWallRef = useRef(0);
+
   // Expose a seek function to the parent for the timeline/event list.
   useEffect(() => {
     if (!registerSeek) return;
@@ -79,6 +106,33 @@ export function Player({
     });
     return () => registerSeek(null);
   }, [registerSeek, src]);
+
+  // Start muted so the ghosts are visible at once (browsers require muted
+  // autoplay anyway) and a judge sees them rest when they unmute (task 21.3),
+  // then listen to `volumechange` — no polling — to track whether the video is
+  // silent to the viewer (task 21.1).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = true;
+    const update = () => {
+      const next = isVideoSilent(video.muted, video.volume);
+      setSilent(next);
+      // Surface the chip for 2 s on every change (task 21.2).
+      setChipVisible(true);
+    };
+    update();
+    video.addEventListener('volumechange', update);
+    return () => video.removeEventListener('volumechange', update);
+  }, [src]);
+
+  // Hide the status chip 2 s after it was last shown, unless the pointer is
+  // over the player (handled by the hover handlers below) (task 21.2).
+  useEffect(() => {
+    if (!chipVisible) return;
+    const id = setTimeout(() => setChipVisible(false), 2000);
+    return () => clearTimeout(id);
+  }, [chipVisible, silent]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -139,9 +193,27 @@ export function Player({
         (e) => e.start <= time && e.end + decay > time,
       );
       const fogs = edgeFogs(fogCandidates, time, overlay);
+
+      // Fade the whole sound overlay toward its show-when target (task 21.1),
+      // stepping by the wall-clock elapsed since the last frame so the 0.6 s
+      // fade is the same at any frame rate. Dialogue is drawn at full opacity
+      // inside draw regardless.
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const dt = lastFrameWallRef.current ? (now - lastFrameWallRef.current) / 1000 : 0;
+      lastFrameWallRef.current = now;
+      const target = overlayShouldShow(s.showWhen, silentRef.current) ? 1 : 0;
+      const fadeSeconds = ghostConfig.overlayFadeSeconds.value;
+      const step = fadeSeconds > 0 ? dt / fadeSeconds : 1;
+      const current = overlayAlphaRef.current;
+      let nextAlpha = current;
+      if (current < target) nextAlpha = Math.min(target, current + step);
+      else if (current > target) nextAlpha = Math.max(target, current - step);
+      overlayAlphaRef.current = nextAlpha;
+
       draw(ctx, sprites, fogs, time, s.reducedMotion, {
         captionBandFrac,
         dialogue: dialogueText,
+        overlayAlpha: nextAlpha,
       });
 
       if (time !== lastReported) {
@@ -171,8 +243,20 @@ export function Player({
     };
   }, [src]);
 
+  const chipState = chipStateFor(settings.showWhen, silent);
+  const chipText =
+    chipState === 'always'
+      ? strings.ui.chipAlways
+      : chipState === 'soundOff'
+        ? strings.ui.chipSoundOff
+        : strings.ui.chipSoundOn;
+
   return (
-    <div className="player">
+    <div
+      className="player"
+      onPointerEnter={() => setChipVisible(true)}
+      onPointerLeave={() => setChipVisible(false)}
+    >
       <video
         ref={videoRef}
         className="player__video"
@@ -182,6 +266,14 @@ export function Player({
         preload="auto"
       />
       <canvas ref={canvasRef} className="player__overlay" aria-hidden="true" />
+      <button
+        type="button"
+        className={`player__chip${chipVisible ? '' : ' player__chip--hidden'}`}
+        onClick={() => onOpenShowWhen?.()}
+        aria-hidden={chipVisible ? undefined : true}
+      >
+        {chipText}
+      </button>
     </div>
   );
 }

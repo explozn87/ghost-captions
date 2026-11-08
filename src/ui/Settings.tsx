@@ -11,7 +11,15 @@ import type { Family } from '../shared/types.ts';
 import type { Lang, Strings } from '../i18n/index.ts';
 import { LANGS, tables } from '../i18n/index.ts';
 import type { Settings as SettingsState } from './settings.ts';
-import { toggleMuted, SIZE_CHOICES, SIZE_SCALES, sizeChoiceFor, type SizeChoice } from './settings.ts';
+import {
+  toggleMuted,
+  SIZE_CHOICES,
+  SIZE_SCALES,
+  sizeChoiceFor,
+  SHOW_WHEN_CHOICES,
+  type SizeChoice,
+  type ShowWhen,
+} from './settings.ts';
 
 /** The ghost families offered as mute toggles, in a stable display order. */
 const FAMILIES: Family[] = [
@@ -42,6 +50,13 @@ const SIZE_LABEL: Record<SizeChoice, (ui: Strings['ui']) => string> = {
   small: (ui) => ui.sizeSmall,
   normal: (ui) => ui.sizeNormal,
   large: (ui) => ui.sizeLarge,
+};
+
+/** Label resolver for each show-when choice, read from the i18n ui table (task 21.1). */
+const SHOW_WHEN_LABEL: Record<ShowWhen, (ui: Strings['ui']) => string> = {
+  always: (ui) => ui.showWhenAlways,
+  auto: (ui) => ui.showWhenAuto,
+  never: (ui) => ui.showWhenNever,
 };
 
 export interface SettingsPanelProps {
@@ -92,6 +107,25 @@ export function SettingsPanel({
         />
         <span>{ui.burnedInSubtitles}</span>
       </label>
+
+      <label className="settings__row">
+        <span>{ui.showGhostsWhen}</span>
+        <select
+          value={settings.showWhen}
+          onChange={(e) =>
+            onChange({ ...settings, showWhen: e.target.value as ShowWhen })
+          }
+        >
+          {SHOW_WHEN_CHOICES.map((choice) => (
+            <option key={choice} value={choice}>
+              {SHOW_WHEN_LABEL[choice](ui)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="settings__help" id="show-when-help">
+        {ui.showWhenHelp}
+      </p>
 
       <label className="settings__row">
         <span>{ui.ghostSize}</span>

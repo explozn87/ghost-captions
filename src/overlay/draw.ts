@@ -261,6 +261,13 @@ export interface DrawOptions {
    * 19.2), or null when none. White text on a dark plate, at most two lines.
    */
   dialogue?: string | null;
+  /**
+   * Opacity of the whole sound overlay (ghosts, edge fog, sound labels), 0..1,
+   * used to fade it in and out in the `auto` show-when mode (task 21.1).
+   * Defaults to 1. Dialogue subtitles ignore this and always draw at full
+   * opacity. When 0 the sound overlay is skipped entirely.
+   */
+  overlayAlpha?: number;
 }
 
 /**
@@ -294,34 +301,70 @@ export function draw(
   const captionBand = Math.max(CAPTION_BAND, options.captionBandFrac ?? CAPTION_BAND);
   ctx.clearRect(0, 0, W, H);
 
-  // Ambient edge fog sits behind the ghosts.
-  for (const fog of fogs) {
-    drawEdgeFog(ctx, fog, time, reducedMotion, loader, minDim, captionBand);
-  }
+  // The whole sound overlay fades with `overlayAlpha` (task 21.1). At 0 it is
+  // skipped entirely; otherwise a thin proxy multiplies every per-shape
+  // globalAlpha the fog/sprite helpers set, so one value dims the lot. Dialogue
+  // is drawn later on the real ctx and is never dimmed.
+  const overlayAlpha = clamp01(options.overlayAlpha ?? 1);
+  if (overlayAlpha > 0) {
+    const octx = overlayAlpha < 1 ? makeAlphaScaledCtx(ctx, overlayAlpha) : ctx;
 
-  for (const sprite of sprites) {
-    const cx = sprite.x * W;
-    const cy = sprite.y * H;
-    const radius = BASE_RADIUS_PX * sprite.scale * minDim;
-
-    let dx = 0;
-    let dy = 0;
-    if (!reducedMotion && sprite.trembleHz > 0) {
-      const phase = 2 * Math.PI * sprite.trembleHz * time;
-      dx = Math.sin(phase) * radius * TREMBLE_AMPLITUDE;
-      dy = Math.cos(phase) * radius * TREMBLE_AMPLITUDE * 0.5;
+    // Ambient edge fog sits behind the ghosts.
+    for (const fog of fogs) {
+      drawEdgeFog(octx, fog, time, reducedMotion, loader, minDim, captionBand);
     }
 
-    drawFog(ctx, cx + dx, cy + dy, radius, sprite.fog, time, reducedMotion);
-    drawGhost(ctx, sprite, cx + dx, cy + dy, radius, loader);
-    drawLabel(ctx, sprite.label, cx + dx, cy + dy + radius * 0.2, sprite.opacity);
+    for (const sprite of sprites) {
+      const cx = sprite.x * W;
+      const cy = sprite.y * H;
+      const radius = BASE_RADIUS_PX * sprite.scale * minDim;
+
+      let dx = 0;
+      let dy = 0;
+      if (!reducedMotion && sprite.trembleHz > 0) {
+        const phase = 2 * Math.PI * sprite.trembleHz * time;
+        dx = Math.sin(phase) * radius * TREMBLE_AMPLITUDE;
+        dy = Math.cos(phase) * radius * TREMBLE_AMPLITUDE * 0.5;
+      }
+
+      drawFog(octx, cx + dx, cy + dy, radius, sprite.fog, time, reducedMotion);
+      drawGhost(octx, sprite, cx + dx, cy + dy, radius, loader);
+      drawLabel(octx, sprite.label, cx + dx, cy + dy + radius * 0.2, sprite.opacity);
+    }
   }
 
   // The active dialogue cue in the bottom caption band (task 19.2): drawn last
   // so it sits above the ghosts, white text on a dark plate, at most two lines.
+  // It is never dimmed by overlayAlpha — a muted viewer still needs the
+  // dialogue whatever the show-when mode (task 21.1).
   if (options.dialogue != null && options.dialogue.trim().length > 0) {
     drawDialogue(ctx, options.dialogue, W, H);
   }
+}
+
+/**
+ * Wrap a 2D context so every `globalAlpha` assignment is multiplied by a fixed
+ * factor (task 21.1). Lets one `overlayAlpha` fade the whole sound overlay
+ * without threading it through every fog/sprite helper. All other members
+ * delegate to the real context unchanged.
+ */
+function makeAlphaScaledCtx(ctx: Ctx2D, factor: number): Ctx2D {
+  let base = 1;
+  return new Proxy(ctx, {
+    get(target, prop, receiver) {
+      if (prop === 'globalAlpha') return base * factor;
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set(target, prop, value, receiver) {
+      if (prop === 'globalAlpha') {
+        base = value as number;
+        (target as Ctx2D).globalAlpha = base * factor;
+        return true;
+      }
+      return Reflect.set(target, prop, value, receiver);
+    },
+  }) as Ctx2D;
 }
 
 /**
