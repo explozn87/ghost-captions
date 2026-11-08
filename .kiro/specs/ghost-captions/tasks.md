@@ -72,8 +72,8 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
   - [x] 10.3 Wire the real classifier into `App`; keep the fake for tests.
     - _Requirements: 2.1_
 
-- [ ] 11. Demo clips
-  - [ ] 11.1 Add two or three redistributable clips under `public/demo/` with `CREDITS.md`; `DemoPicker` showing title, author, licence.
+- [x] 11. Demo clips
+  - [x] 11.1 Add two or three redistributable clips under `public/demo/` with `CREDITS.md`; `DemoPicker` showing title, author, licence.
     - _Requirements: 1.3, NFR-4_
 
 - [ ] 12. Kiro hooks

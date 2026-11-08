@@ -29,6 +29,8 @@ import { asLang, DEFAULT_LANG, t } from '../i18n/index.ts';
 import type { Lang } from '../i18n/index.ts';
 import { defaultSettings, currentEventIndex, type Settings } from './settings.ts';
 import { DropZone } from './DropZone.tsx';
+import { DemoPicker } from './DemoPicker.tsx';
+import type { DemoClip } from './demoClips.ts';
 import { Progress } from './Progress.tsx';
 import { Player } from './Player.tsx';
 import { Timeline } from './Timeline.tsx';
@@ -53,7 +55,7 @@ export interface AppProps {
 type Phase =
   | { kind: 'intake' }
   | { kind: 'analysing'; progress: number }
-  | { kind: 'watch'; track: EventTrack; src: string }
+  | { kind: 'watch'; track: EventTrack; src: string; credit: DemoClip | null }
   | { kind: 'error'; message: string };
 
 /** Default decoder: the real Web Audio `decodeFile` (task 10.1). */
@@ -96,7 +98,7 @@ export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Ele
   }, []);
 
   const onFile = useCallback(
-    async (file: File) => {
+    async (file: File, credit: DemoClip | null = null) => {
       setPhase({ kind: 'analysing', progress: 0 });
       setTime(0);
       try {
@@ -107,7 +109,7 @@ export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Ele
         if (srcRef.current) URL.revokeObjectURL(srcRef.current);
         const src = URL.createObjectURL(file);
         srcRef.current = src;
-        setPhase({ kind: 'watch', track, src });
+        setPhase({ kind: 'watch', track, src, credit });
       } catch (err) {
         const name = file.name;
         const message = `${strings.ui.decodeErrorPrefix} "${name}". ${strings.ui.decodeErrorSuggest}`;
@@ -129,7 +131,14 @@ export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Ele
       </header>
 
       {phase.kind === 'intake' && (
-        <DropZone strings={strings} onFile={onFile} />
+        <DropZone strings={strings} onFile={onFile}>
+          <DemoPicker
+            strings={strings}
+            onFile={(file, clip) => {
+              void onFile(file, clip);
+            }}
+          />
+        </DropZone>
       )}
 
       {phase.kind === 'analysing' && (
@@ -149,6 +158,7 @@ export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Ele
         <WatchScreen
           track={phase.track}
           src={phase.src}
+          credit={phase.credit}
           settings={settings}
           onSettings={setSettings}
           time={time}
@@ -166,6 +176,7 @@ export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Ele
 interface WatchScreenProps {
   track: EventTrack;
   src: string;
+  credit: DemoClip | null;
   settings: Settings;
   onSettings: (s: Settings) => void;
   time: number;
@@ -177,6 +188,7 @@ interface WatchScreenProps {
 function WatchScreen({
   track,
   src,
+  credit,
   settings,
   onSettings,
   time,
@@ -189,6 +201,12 @@ function WatchScreen({
 
   return (
     <div className="watch">
+      {credit && (
+        <p className="notice notice--credit" role="note">
+          <strong>{credit.title}</strong> {strings.ui.demoBy} {credit.author} —{' '}
+          {strings.ui.demoLicencePrefix} {strings.licence[credit.licence]}
+        </p>
+      )}
       {track.mono && (
         <p className="notice notice--mono" role="note">
           {strings.ui.monoNotice}

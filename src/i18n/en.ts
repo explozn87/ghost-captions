@@ -45,6 +45,13 @@ export const en: Strings = {
     dread: 'dread',
   },
 
+  licence: {
+    CC0: 'CC0 1.0',
+    'CC-BY-3': 'CC BY 3.0',
+    'CC-BY-4': 'CC BY 4.0',
+    'public-domain': 'Public domain',
+  },
+
   ui: {
     appName: 'Ghost Captions',
 
@@ -52,6 +59,12 @@ export const en: Strings = {
     dropHint: 'Everything stays on your device — nothing is uploaded.',
     chooseFile: 'Choose a file',
     orPickDemo: 'or pick a demo clip',
+
+    demoHeading: 'Demo clips',
+    demoBy: 'by',
+    demoLicencePrefix: 'Licence:',
+    demoSource: 'Source',
+    demoLoadError: 'Could not load this demo clip. Please try another.',
 
     analysing: 'Listening for ghosts…',
     analysingHint: 'Analysing the audio so ghosts appear exactly in time.',

@@ -19,6 +19,7 @@
 //   - `ui`: every other on-screen string (buttons, panels, notices).
 
 import type { Family, Side, Trend } from '../shared/types.ts';
+import type { SpdxLicence } from '../ui/demoClips.ts';
 
 /** Loudness band words for the event list (Requirement 7.2). */
 export type LoudnessBand = 'quiet' | 'medium' | 'loud';
@@ -43,6 +44,12 @@ export interface Strings {
   /** Ominousness band words for the event list (Requirement 7.2). */
   ominous: Record<OminousBand, string>;
 
+  /**
+   * Short display name for each redistributable demo-clip licence (NFR-4),
+   * shown next to a clip in the picker and while it plays (Req 1.3).
+   */
+  licence: Record<SpdxLicence, string>;
+
   /** Every other on-screen string. */
   ui: {
     appName: string;
@@ -52,6 +59,13 @@ export interface Strings {
     dropHint: string;
     chooseFile: string;
     orPickDemo: string;
+
+    // Demo picker (Requirement 1.3, NFR-4).
+    demoHeading: string;
+    demoBy: string;
+    demoLicencePrefix: string;
+    demoSource: string;
+    demoLoadError: string;
 
     // Analysing (Requirement 2).
     analysing: string;

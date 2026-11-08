@@ -44,6 +44,13 @@ export const ko: Strings = {
     dread: '공포',
   },
 
+  licence: {
+    CC0: 'CC0 1.0',
+    'CC-BY-3': 'CC BY 3.0',
+    'CC-BY-4': 'CC BY 4.0',
+    'public-domain': '퍼블릭 도메인',
+  },
+
   ui: {
     appName: '소리의 유령',
 
@@ -51,6 +58,12 @@ export const ko: Strings = {
     dropHint: '모든 처리는 기기 안에서만 이루어지며, 아무것도 업로드되지 않습니다.',
     chooseFile: '파일 선택',
     orPickDemo: '또는 데모 클립을 고르세요',
+
+    demoHeading: '데모 클립',
+    demoBy: '제작:',
+    demoLicencePrefix: '라이선스:',
+    demoSource: '출처',
+    demoLoadError: '이 데모 클립을 불러오지 못했습니다. 다른 클립을 선택해 주세요.',
 
     analysing: '유령을 찾는 중…',
     analysingHint: '유령이 정확한 순간에 나타나도록 오디오를 분석하고 있습니다.',
