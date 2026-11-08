@@ -122,3 +122,11 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
     - _Requirements: 4.4, 4.5, 6.2, 6.6, 10.3_
   - [x] 17.4 Keep ghosts out of the caption band and keep the central face region light: a full-size ghost's opacity drops to 0.55 while its centre is inside the central 40 % of the frame.
     - _Requirements: 6.5_
+
+- [ ] 18. Make ambient sounds unmistakable (feedback 2026-11-08: the wind edge fog was invisible — measured mean change of only 4/255 at the edges over the Sintel wind scene)
+  - [ ] 18.1 Visible fog: pale lavender light (e.g. rgb(205,200,240)) instead of dark grey-blue, blended so it shows on dark and bright video; the target opacity of a medium-loud ambient event reaches at least 0.30 at the outer edge (cap stays `edgeFogMaxOpacity`), and the attack/release are expressed per second (not per frame) so the fog looks the same at any frame rate. Add a test that a medium-loud wind event over a black frame changes edge pixels by a clearly visible amount (mean ≥ 40/255 in the outer band) while the central 60 % stays untouched.
+    - _Requirements: 6.2, 6.5_
+  - [ ] 18.2 Motion texture per ambient family inside the fog band (config table `ambientTexture`): `wind` → soft horizontal streaks drifting across the band (from the source side when known); `rain` → thin falling streaks; `thunder` → a single slow edge swell (no flash, Req 10.3); `tenseMusic` / `calmMusic` → a few note shapes drifting slowly in the band (sharper and faster for tense). Reduced motion: static texture at the same density.
+    - _Requirements: 6.2, 6.6, 10.3_
+  - [ ] 18.3 Identity: every ambient event also shows its family sprite (`public/ghosts/<family>.png`) at reduced size (50 % of the point-ghost size) inside its fog band, plus its text label on a backing plate, so the viewer can tell what the sound is without the animation (Req 6.4). The sprite and label sit in the upper part of the band, never in the caption band.
+    - _Requirements: 6.3, 6.4, 6.5_
