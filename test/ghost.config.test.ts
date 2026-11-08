@@ -131,6 +131,17 @@ describe('ghost.config (task 2.2)', () => {
     expect(ghostConfig.overlayFadeSeconds.value).toBeLessThanOrEqual(2);
   });
 
+  it('carries the minimum-display values with a why, in the documented ranges (task 34.1)', () => {
+    expectHasWhy(ghostConfig.ghostMinDisplaySeconds);
+    expectHasWhy(ghostConfig.ghostLingerAlpha);
+    expect(ghostConfig.ghostMinDisplaySeconds.value).toBe(2.0);
+    expect(ghostConfig.ghostLingerAlpha.value).toBe(0.5);
+    expect(ghostConfig.ghostMinDisplaySeconds.value).toBeGreaterThan(0);
+    // The linger opacity is a fraction, clearly dimmer than a full ghost.
+    expect(ghostConfig.ghostLingerAlpha.value).toBeGreaterThan(0);
+    expect(ghostConfig.ghostLingerAlpha.value).toBeLessThan(1);
+  });
+
   it('carries the task-25 timing values with a why (tasks 25.1, 25.2, 25.3)', () => {
     expectHasWhy(ghostConfig.evidenceSpanMinSec);
     expectHasWhy(ghostConfig.trendLabelSec);

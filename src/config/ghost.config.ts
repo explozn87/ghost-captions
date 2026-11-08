@@ -185,6 +185,26 @@ export interface GhostConfig {
    * tiny downsample of the frame at most every 0.5 s, on-device.
    */
   labelDarkFrameLuma: Tuned;
+  /**
+   * The minimum time (seconds) a point ghost and its label stay on screen (task
+   * 34.1): an occurrence shorter than this keeps its ghost and label visible
+   * until `start + ghostMinDisplaySeconds`, like a caption's minimum display
+   * time, so a viewer who cannot hear has time to read the label. The part
+   * after the measured end is drawn at reduced opacity (`ghostLingerAlpha`) and
+   * fades out, so it reads as "just happened", not as a sound still going on.
+   * Longer occurrences are unchanged. The extension never changes any count,
+   * time, timeline mark or WebVTT cue (task 34.2).
+   */
+  ghostMinDisplaySeconds: Tuned;
+  /**
+   * The opacity a lingering ghost/label takes at the start of its linger tail
+   * (task 34.1): the stretch between the measured end and
+   * `start + ghostMinDisplaySeconds`. It fades smoothly from this value to 0 by
+   * the end of the tail (reduced motion: held static at this value, no fade,
+   * task 34.3), so the lingering sound reads as a fading memory rather than an
+   * ongoing sound.
+   */
+  ghostLingerAlpha: Tuned;
 }
 
 /**
@@ -435,6 +455,14 @@ export const ghostConfig = {
   labelDarkFrameLuma: {
     value: 40,
     why: 'A video frame counts as dark when the mean luma of a 16×9 downsample is below 40/255 (task 27.3), the point at which a pale-plate label needs the size boost to stay readable. Sampled at most every 0.5 s from a tiny downsample, entirely on-device (nothing leaves the browser).',
+  },
+  ghostMinDisplaySeconds: {
+    value: 2.0,
+    why: 'A point ghost and its label stay on screen for at least 2.0 s (task 34.1), like a caption\'s minimum display time: a short bang (the Sintel gunshot was shown only ~8.95–9.6 s) vanished before a viewer who cannot hear could read the label. A sound shorter than this lingers until start + 2.0 s; longer sounds are unchanged. The linger never changes any count, time, timeline mark or WebVTT cue (task 34.2).',
+  },
+  ghostLingerAlpha: {
+    value: 0.5,
+    why: 'The linger tail (the stretch after a short sound\'s measured end, task 34.1) starts at 0.5 opacity and fades to 0, so it reads as "just happened" rather than a sound still going on. Half opacity is clearly dimmer than the full ghost while staying readable; under reduced motion it is held static at this value with no fade (task 34.3).',
   },
 } satisfies GhostConfig;
 

@@ -212,6 +212,60 @@ function clamp01(x: number): number {
 }
 
 /**
+ * The last moment a point ghost is drawn (task 34.1): its measured end, or
+ * `start + ghostMinDisplaySeconds` when the occurrence is shorter than that, so
+ * a short sound stays long enough to read. Never earlier than the measured end,
+ * so a long sound is unchanged. Pure; reads only the event timing and config.
+ *
+ * This is a DISPLAY quantity only — it never changes the event's measured
+ * `end`, so the missed-sounds counter, the end-card list, the timeline and the
+ * WebVTT export all keep the measured start/end (task 34.2).
+ */
+export function ghostDisplayEnd(event: SoundEvent, cfg: GhostConfig = ghostConfig): number {
+  return Math.max(event.end, event.start + cfg.ghostMinDisplaySeconds.value);
+}
+
+/**
+ * Whether a point ghost should be drawn at time `t` (task 34.1): within
+ * `[start, ghostDisplayEnd)`. Used by the Player to keep a short ghost on screen
+ * through its linger tail even though its measured event has ended, and by
+ * `layout` to drop events outside their display window.
+ */
+export function isGhostVisibleAt(event: SoundEvent, t: number, cfg: GhostConfig = ghostConfig): boolean {
+  return t >= event.start && t < ghostDisplayEnd(event, cfg);
+}
+
+/**
+ * The linger-tail opacity multiplier for a point ghost at time `t` (task 34.1):
+ *   - 1 while the event is still within its measured span (`t < end`);
+ *   - during the linger tail (`end <= t < ghostDisplayEnd`, which exists only
+ *     for occurrences shorter than `ghostMinDisplaySeconds`) it starts at
+ *     `ghostLingerAlpha` and fades smoothly to 0 by the end of the tail, so the
+ *     lingering sound reads as a fading memory, not an ongoing sound;
+ *   - 0 once past `ghostDisplayEnd`.
+ * Under reduced motion the tail is held static at `ghostLingerAlpha` with no
+ * fade (task 34.3). Pure. A long occurrence (no tail) always returns 1 while
+ * active.
+ */
+export function lingerAlpha(
+  event: SoundEvent,
+  t: number,
+  reducedMotion: boolean,
+  cfg: GhostConfig = ghostConfig,
+): number {
+  if (t < event.start) return 0;
+  if (t < event.end) return 1;
+  const displayEnd = ghostDisplayEnd(event, cfg);
+  if (t >= displayEnd) return 0;
+  const start = cfg.ghostLingerAlpha.value;
+  if (reducedMotion) return start;
+  const tail = displayEnd - event.end;
+  if (tail <= 0) return start;
+  const remaining = clamp01((displayEnd - t) / tail);
+  return start * remaining;
+}
+
+/**
  * The on-screen band centre (0..1 of width) for an event at time `t`. A
  * travelling sound interpolates its `sideTrack` so the ghost drifts between
  * bands; under reduced motion it sits at the mean of the track instead of
@@ -439,19 +493,39 @@ export function layout(
     (e) =>
       !e.isSpeech &&
       !isAmbientFamily(e.family, cfg) &&
-      !settings.mutedFamilies.has(e.family),
+      !settings.mutedFamilies.has(e.family) &&
+      // A short ghost lingers past its measured end up to ghostDisplayEnd (task
+      // 34.1); drop anything the Player passed in that is already past its
+      // display window so it is not drawn.
+      isGhostVisibleAt(e, t, cfg),
   );
 
   // One big ghost at a time (task 17.2): only the loudest drawable point event
   // is full size; every other simultaneous point event becomes a small marker
   // at MARKER_SCALE so large ghosts never pile up over faces. Ties break on the
   // earlier array index for determinism (layout is pure).
+  //
+  // A newcomer that is still within its measured span (not lingering) always
+  // takes the big slot ahead of a ghost that has already ended and is only
+  // lingering (task 34.2): the lingering ghost drops to its small marker form
+  // (or disappears when its tail ends). So the big slot is chosen among the
+  // still-active events first; only if none is active does a lingering one take
+  // it.
   let loudestIndex = -1;
   let loudestLoud = -Infinity;
+  let loudestActive = false;
   drawable.forEach((e, i) => {
-    if (e.loudness > loudestLoud) {
+    const active = t < e.end;
+    // Prefer an active event over a lingering one; among equal activity, the
+    // loudest; ties break on the earlier index.
+    const better =
+      loudestIndex === -1 ||
+      (active && !loudestActive) ||
+      (active === loudestActive && e.loudness > loudestLoud);
+    if (better) {
       loudestLoud = e.loudness;
       loudestIndex = i;
+      loudestActive = active;
     }
   });
 
@@ -513,6 +587,10 @@ export function layout(
     const edgeOpacity = pointGhostOpacity(event, t, settings.reducedMotion, cfg);
     const inFaceBand = x > 0.5 - CENTRE_FACE_BAND / 2 && x < 0.5 + CENTRE_FACE_BAND / 2;
     const faceDim = isBig && inFaceBand ? CENTRE_FACE_OPACITY : 1;
+    // A short ghost that has passed its measured end lingers at reduced opacity
+    // and fades out (task 34.1), so the viewer still has time to read the label
+    // but the sound reads as "just happened", not ongoing.
+    const linger = lingerAlpha(event, t, settings.reducedMotion, cfg);
 
     sprites.push({
       family: event.family,
@@ -521,7 +599,7 @@ export function layout(
       scale,
       fog: clamp(event.ominous, 0, 1),
       trembleHz,
-      opacity: clamp01(edgeOpacity * faceDim),
+      opacity: clamp01(edgeOpacity * faceDim * linger),
       label: spriteLabel(event, s, settings.lang, t),
       arriving: isArriving(event, t, cfg),
     });

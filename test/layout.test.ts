@@ -13,6 +13,9 @@ import {
   MARKER_SCALE,
   MAX_TREMBLE_HZ,
   TOP_MARGIN,
+  ghostDisplayEnd,
+  isGhostVisibleAt,
+  lingerAlpha,
   type Viewport,
   type OverlaySettings,
 } from '../src/overlay/layout.ts';
@@ -951,5 +954,129 @@ describe('edgeFogs: a long-running ambient event stays visible up to endAt (task
     expect(fogs[0]!.family).toBe('calmMusic');
     // Its label still names the sound (it never becomes empty).
     expect(fogs[0]!.label.length).toBeGreaterThan(0);
+  });
+});
+
+describe('layout: a short sound stays long enough to read (task 34)', () => {
+  const minDisplay = ghostConfig.ghostMinDisplaySeconds.value; // 2.0
+  const lingerStart = ghostConfig.ghostLingerAlpha.value; // 0.5
+
+  // A 0.6 s gunshot (shorter than the 2.0 s floor). gunshot is edgeReact with a
+  // known side, so its point-ghost opacity stays 1 while active and the linger
+  // tail is the only thing that dims it — the cleanest case to assert on.
+  function shortGunshot(): SoundEvent {
+    return makeEvent({ id: 'g', family: 'gunshot', side: 'right', start: 8.9, end: 9.5, loudness: 0.9 });
+  }
+
+  describe('ghostDisplayEnd / isGhostVisibleAt (task 34.1)', () => {
+    it('extends a short occurrence to start + ghostMinDisplaySeconds', () => {
+      const g = shortGunshot();
+      expect(ghostDisplayEnd(g)).toBeCloseTo(g.start + minDisplay, 10);
+    });
+
+    it('leaves a long occurrence at its measured end', () => {
+      const long = makeEvent({ family: 'gunshot', side: 'right', start: 0, end: 5, loudness: 0.9 });
+      expect(ghostDisplayEnd(long)).toBe(5);
+    });
+
+    it('keeps a short ghost visible through its linger window and not after', () => {
+      const g = shortGunshot();
+      expect(isGhostVisibleAt(g, g.start + 0.1)).toBe(true); // active
+      expect(isGhostVisibleAt(g, g.end + 0.5)).toBe(true); // lingering
+      expect(isGhostVisibleAt(g, g.start + minDisplay + 0.1)).toBe(false); // past
+      expect(isGhostVisibleAt(g, g.start - 0.1)).toBe(false); // before
+    });
+  });
+
+  describe('lingerAlpha (task 34.1, 34.3)', () => {
+    it('is 1 while the event is within its measured span', () => {
+      const g = shortGunshot();
+      expect(lingerAlpha(g, g.start + 0.1, false)).toBe(1);
+    });
+
+    it('starts the tail at ghostLingerAlpha and fades to 0', () => {
+      const g = shortGunshot();
+      // Just after the measured end, the tail opens at ~ghostLingerAlpha.
+      expect(lingerAlpha(g, g.end + 0.001, false)).toBeCloseTo(lingerStart, 2);
+      // Half way through the tail it is about half of that.
+      const displayEnd = ghostDisplayEnd(g);
+      const mid = (g.end + displayEnd) / 2;
+      expect(lingerAlpha(g, mid, false)).toBeCloseTo(lingerStart / 2, 2);
+      // At the very end of the tail it has faded to 0.
+      expect(lingerAlpha(g, displayEnd - 0.0001, false)).toBeCloseTo(0, 2);
+      expect(lingerAlpha(g, displayEnd + 0.1, false)).toBe(0);
+    });
+
+    it('under reduced motion holds the tail static at ghostLingerAlpha, no fade (task 34.3)', () => {
+      const g = shortGunshot();
+      const displayEnd = ghostDisplayEnd(g);
+      const mid = (g.end + displayEnd) / 2;
+      expect(lingerAlpha(g, g.end + 0.1, true)).toBe(lingerStart);
+      expect(lingerAlpha(g, mid, true)).toBe(lingerStart);
+      // Still 0 once past the display window.
+      expect(lingerAlpha(g, displayEnd + 0.1, true)).toBe(0);
+    });
+
+    it('a long occurrence is unaffected (no tail)', () => {
+      const long = makeEvent({ family: 'gunshot', side: 'right', start: 0, end: 5, loudness: 0.9 });
+      expect(lingerAlpha(long, 2, false)).toBe(1);
+      expect(lingerAlpha(long, 4.9, false)).toBe(1);
+      expect(lingerAlpha(long, 5.1, false)).toBe(0);
+    });
+  });
+
+  describe('layout draws the lingering ghost (task 34.1, 34.4)', () => {
+    const viewport: Viewport = { width: 800, height: 600 };
+
+    it('draws a 0.6 s event at t = start + 1.5 s with alpha ~ 0.5', () => {
+      const g = shortGunshot(); // start 8.9, end 9.5, min display 2.0
+      const t = g.start + 1.5; // inside the tail (end 9.5, displayEnd 10.9)
+      const sprites = layout([g], t, viewport, defaultSettings);
+      expect(sprites).toHaveLength(1);
+      // The tail opacity at this time: 0.5 * (displayEnd - t)/(displayEnd - end).
+      const displayEnd = ghostDisplayEnd(g);
+      const expected = lingerStart * ((displayEnd - t) / (displayEnd - g.end));
+      expect(sprites[0]!.opacity).toBeCloseTo(expected, 2);
+      // Right in the middle of the 0.5..0 fade, so clearly dimmed but visible.
+      expect(sprites[0]!.opacity).toBeGreaterThan(0);
+      expect(sprites[0]!.opacity).toBeLessThan(lingerStart + 0.01);
+    });
+
+    it('does not draw the event at t = start + 2.1 s (past the display window)', () => {
+      const g = shortGunshot();
+      const t = g.start + minDisplay + 0.1;
+      const sprites = layout([g], t, viewport, defaultSettings);
+      expect(sprites).toHaveLength(0);
+    });
+
+    it('a 5 s event is drawn at full opacity at t = 2 s (unaffected)', () => {
+      const long = makeEvent({ family: 'gunshot', side: 'right', start: 0, end: 5, loudness: 0.9 });
+      const sprites = layout([long], 2, viewport, defaultSettings);
+      expect(sprites).toHaveLength(1);
+      expect(sprites[0]!.opacity).toBe(1);
+    });
+
+    it('a newcomer during the linger takes the big slot; the lingering ghost drops to a marker (task 34.2)', () => {
+      // The gunshot has ended and is lingering; a fresh, louder impact arrives.
+      const lingering = shortGunshot(); // end 9.5, lingering at t=10
+      const newcomer = makeEvent({ id: 'n', family: 'impact', side: 'left', start: 9.9, end: 11, loudness: 0.95 });
+      const t = 10; // lingering gunshot (tail) + active impact
+      const sprites = layout([lingering, newcomer], t, viewport, defaultSettings);
+      expect(sprites).toHaveLength(2);
+      const byFamily = new Map(sprites.map((sp) => [sp.family, sp]));
+      const impact = byFamily.get('impact')!;
+      const gun = byFamily.get('gunshot')!;
+      // The active newcomer is full size (not scaled down by MARKER_SCALE);
+      // the lingering ghost is the small marker. Compare the base scale by
+      // dividing out the marker factor is awkward, so assert the newcomer's
+      // scale is clearly larger than the lingering marker's.
+      expect(impact.scale).toBeGreaterThan(gun.scale);
+      // Even if the lingering gunshot were louder, the active one takes the big
+      // slot: swap loudness and re-check.
+      const louderLingering = { ...lingering, loudness: 0.99 };
+      const sprites2 = layout([louderLingering, newcomer], t, viewport, defaultSettings);
+      const b2 = new Map(sprites2.map((sp) => [sp.family, sp]));
+      expect(b2.get('impact')!.scale).toBeGreaterThan(b2.get('gunshot')!.scale);
+    });
   });
 });

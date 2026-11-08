@@ -20,7 +20,7 @@ import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import type { DialogueCue, EventTrack } from '../shared/types.ts';
 import { activeEvents } from '../events/buildEvents.ts';
-import { layout, edgeFogs, fogDecayDuration } from '../overlay/layout.ts';
+import { layout, edgeFogs, fogDecayDuration, isGhostVisibleAt } from '../overlay/layout.ts';
 import { draw, preloadSpriteImages, measureDialogueBandFrac, spriteImageUrl, isDarkFrame } from '../overlay/draw.ts';
 import { activeDialogueCue } from '../subtitles/parse.ts';
 import { ghostConfig } from '../config/ghost.config.ts';
@@ -344,7 +344,21 @@ export function Player({
 
       const overlay = { ...toOverlaySettings(s), captionBandFrac };
       const active = activeEvents(trackRef.current, time);
-      const sprites = layout(active, time, { width: w, height: h }, overlay);
+      // A short point ghost lingers past its measured end up to its display end
+      // (task 34.1), so the Player passes `layout` not just the active events
+      // but also point events whose measured span has ended yet are still
+      // within their linger window. `layout` filters by `isGhostVisibleAt` and
+      // fades the tail. Ambient events are unaffected (they keep their own
+      // attack/decay), so only point events are extended here; the active set
+      // already covers everything still playing.
+      const lingering = trackRef.current.events.filter(
+        (e) =>
+          e.end <= time &&
+          isGhostVisibleAt(e, time) &&
+          !isAmbientFamily(e.family),
+      );
+      const pointCandidates = lingering.length > 0 ? [...active, ...lingering] : active;
+      const sprites = layout(pointCandidates, time, { width: w, height: h }, overlay);
       // Edge fog (task 16.3) needs ambient events that are active OR ended
       // within the decay window, so their slow withdrawal still shows.
       const decay = fogDecayDuration();
