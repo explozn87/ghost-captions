@@ -877,8 +877,22 @@ function drawFogTexture(
       // One slow edge swell: a single broad band whose width breathes slowly,
       // never a flash (Req 10.3). Only one shape regardless of density.
       if (i > 0) continue;
+      // A soft gradient from the band's outer edge, never a hard-edged block
+      // (fun review 2026-11-09: the solid swell read as an unnamed rectangle).
       const swell = reducedMotion ? 0.6 : 0.6 + 0.3 * Math.sin(2 * Math.PI * 0.2 * time);
-      bandRect(bandX, 0, bandW * swell, bandH);
+      // Brightness stays constant (Req 10.3); only the reach of the gradient
+      // breathes slowly.
+      const g =
+        fog.edge === 'top'
+          ? ctx.createLinearGradient(0, 0, 0, bandH * swell)
+          : fog.edge === 'right'
+            ? ctx.createLinearGradient(bandEnd, 0, bandEnd - bandW * swell, 0)
+            : ctx.createLinearGradient(bandX, 0, bandX + bandW * swell, 0);
+      g.addColorStop(0, `rgba(${FOG_RGB},${(alpha * 0.75).toFixed(3)})`);
+      g.addColorStop(1, `rgba(${FOG_RGB},0)`);
+      ctx.fillStyle = g as unknown as CanvasGradient;
+      ctx.fillRect(bandX, 0, bandW, bandH);
+      ctx.fillStyle = colour;
     }
   }
   ctx.restore();

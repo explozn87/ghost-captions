@@ -433,9 +433,15 @@ describe('draw: ambient band texture per family (task 18.2, 23.4)', () => {
     );
   }
 
-  it('draws lavender streak/swell rects for wind, rain and thunder', () => {
-    for (const texture of ['windStreaks', 'rainStreaks', 'thunderSwell'] as const) {
+  it('draws lavender streak rects for wind and rain', () => {
+    for (const texture of ['windStreaks', 'rainStreaks'] as const) {
       expect(textureRects(texture, 0, false).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('thunder swell is a soft gradient, never a hard-edged solid block (fun review 2026-11-09)', () => {
+    for (const t of [0, 1.3, 2.6]) {
+      expect(textureRects('thunderSwell', t, false).length).toBe(0);
     }
   });
 
