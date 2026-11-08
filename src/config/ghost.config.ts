@@ -205,6 +205,27 @@ export interface GhostConfig {
    * ongoing sound.
    */
   ghostLingerAlpha: Tuned;
+  /**
+   * The dialogue-subtitle font as a fraction of the frame height (task 36.1),
+   * so the spoken-word captions scale with the player exactly like the sound
+   * labels do. The effective dialogue font is
+   * `max(labelMinPx, dialogueFrameFrac * frameHeight)`, and the sound-label
+   * font is guaranteed to be at least this large at every frame size, so a
+   * viewer who cannot hear never sees the sound names smaller than the words.
+   */
+  dialogueFrameFrac: Tuned;
+  /**
+   * An optional per-label sprite override (task 36.3): the drawn ghost image
+   * for a SPECIFIC classifier label, when it differs from what the family
+   * sprite would show. The key is the English `display_name` (the classifier
+   * label on `SoundEvent.topLabel`), the value the PNG path. Used only for the
+   * drawn picture; family, counts, the event list and the export are unchanged.
+   * If the override image is missing or not yet loaded, `draw` falls back to a
+   * built-in Path2D silhouette for that label (not the family's wheeled-vehicle
+   * ghost). Starts with Helicopter, which maps to the `vehicle` family but is
+   * not a wheeled vehicle.
+   */
+  spriteOverrideByLabel: { value: Record<string, string>; why: string };
 }
 
 /**
@@ -463,6 +484,16 @@ export const ghostConfig = {
   ghostLingerAlpha: {
     value: 0.5,
     why: 'The linger tail (the stretch after a short sound\'s measured end, task 34.1) starts at 0.5 opacity and fades to 0, so it reads as "just happened" rather than a sound still going on. Half opacity is clearly dimmer than the full ghost while staying readable; under reduced motion it is held static at this value with no fade (task 34.3).',
+  },
+  dialogueFrameFrac: {
+    value: 0.037,
+    why: 'Dialogue subtitles are 3.7% of the frame height (task 36.1): on a wide Tears of Steel frame (445 px tall) that is ~16 px, close to the earlier fixed 22 px on a 600 px frame while now scaling with the player. Set slightly above labelFrameFrac (0.03) so the words read comfortably; the sound label font is then floored to this value (max(labelFontPx, dialogueFontPx)) so the sound names are never smaller than the words for a viewer who cannot hear (Req 6.4). Measured defect: sound labels were 14 px against 22 px dialogue on the wide ToS frame.',
+  },
+  spriteOverrideByLabel: {
+    value: {
+      Helicopter: '/ghosts/helicopter.png',
+    },
+    why: 'The picture must match the name (task 36.3). The Helicopter class maps to the `vehicle` family (so counts, list and export treat it like other vehicles), but a wheeled-car ghost next to the label "Helicopter" reads as wrong. This override draws the helicopter sprite for that specific label only; a missing/not-yet-loaded override falls back to a built-in rotor silhouette (not the car). Keyed by the English display_name on SoundEvent.topLabel.',
   },
 } satisfies GhostConfig;
 

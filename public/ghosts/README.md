@@ -33,6 +33,27 @@ motion uses the same images without drift or tremble.
 This fallback is covered by `test/draw.test.ts` with a fake image loader, so the
 app works with or without the PNGs present.
 
+## Per-label sprite overrides (task 36.3)
+
+Some specific classifier labels are drawn with their own sprite even though they
+map to a broader family. The override map lives in
+`ghostConfig.spriteOverrideByLabel` (keyed by the English `display_name`):
+
+```
+Helicopter → public/ghosts/helicopter.png
+```
+
+A Helicopter maps to the `vehicle` family (so counts, the event list and the
+export treat it like any vehicle), but a wheeled-car ghost next to the label
+"Helicopter" reads as wrong, so `draw()` paints `helicopter.png` for that label
+only. If the override PNG is **missing or not yet loaded**, `draw()` falls back
+to a built-in rotor `Path2D` silhouette for the label (not the wheeled-vehicle
+ghost), covered by `test/draw.test.ts` with the fake image loader.
+
+- `helicopter.png`: 512×512, transparent, generated 2026-11-09 by Elsa (same
+  terms as the other 20 ghosts above). Redistribution rights depend on the
+  image service terms: confirm before public release.
+
 ## Credits
 
 20 PNGs (512x512, transparent) generated 2026-11-08 by Elsa (team Codex seat, built-in image generation tool; model name not reported). Redistribution rights depend on the image service terms: confirm before public release.

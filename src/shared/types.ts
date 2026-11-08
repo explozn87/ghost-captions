@@ -162,6 +162,24 @@ export interface GhostSprite {
    * so the arrival still reads without any movement.
    */
   arriving: boolean;
+  /**
+   * An optional per-label sprite override (task 36.3): the PNG path to draw
+   * instead of the family sprite, when the event's specific classifier label
+   * has one in `spriteOverrideByLabel` (e.g. a Helicopter, which maps to the
+   * `vehicle` family but is not a wheeled vehicle). `undefined` when the label
+   * has no override, so `draw` uses the family sprite as usual. Only the drawn
+   * picture is affected — family, counts, the event list and the export are
+   * unchanged. If the override image is missing or not yet loaded, `draw` falls
+   * back to a built-in rotor silhouette for the label, not the family's ghost.
+   */
+  spriteOverride?: string;
+  /**
+   * The override key (the English `display_name`) when `spriteOverride` is set
+   * (task 36.3), so `draw` can pick the matching built-in fallback silhouette
+   * (e.g. a rotor for Helicopter) rather than the family's ghost when the
+   * override image is not available.
+   */
+  spriteOverrideKey?: string;
 }
 
 /**

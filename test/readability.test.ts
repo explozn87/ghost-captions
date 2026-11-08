@@ -4,6 +4,7 @@ import {
   draw,
   isDarkFrame,
   labelFontPx,
+  dialogueFontPx,
   type Ctx2D,
   type SpriteImageLoader,
 } from '../src/overlay/draw.ts';
@@ -88,8 +89,13 @@ describe('labelFontPx (task 27.3)', () => {
   it('is the floor on a small frame and scales with frame height', () => {
     // 0.03 * 300 = 9 < labelMinPx (14) → floor wins.
     expect(labelFontPx(300)).toBe(cfg.labelMinPx.value);
-    // 0.03 * 600 = 18 > floor → the fraction wins.
-    expect(labelFontPx(600)).toBe(Math.round(cfg.labelFrameFrac.value * 600));
+    // On a 600 px frame the label is the larger of its own fraction and the
+    // dialogue floor (task 36.1): labelFrameFrac*600 = 18 but the dialogue font
+    // (dialogueFrameFrac*600 ≈ 22) is larger, so the label is floored to it so
+    // the sound name is never smaller than the dialogue words.
+    expect(labelFontPx(600)).toBe(
+      Math.max(Math.round(cfg.labelFrameFrac.value * 600), dialogueFontPx(600)),
+    );
     // Taller frame → larger font.
     expect(labelFontPx(1200)).toBeGreaterThan(labelFontPx(600));
   });

@@ -468,6 +468,23 @@ export function spriteLabel(
 }
 
 /**
+ * The per-label sprite override for an event (task 36.3): the PNG path to draw
+ * instead of the family sprite when the event's SPECIFIC classifier label
+ * (`topLabel`) has one in `spriteOverrideByLabel`. Returns `undefined` when the
+ * label has no override (or the event has no confident label), so the family
+ * sprite is used as usual. Keyed by the English `display_name` exactly as it
+ * sits on `SoundEvent.topLabel`. Pure; reads only the event and config.
+ */
+export function spriteOverrideFor(
+  event: SoundEvent,
+  cfg: GhostConfig = ghostConfig,
+): string | undefined {
+  const label = event.topLabel;
+  if (label == null) return undefined;
+  return cfg.spriteOverrideByLabel.value[label];
+}
+
+/**
  * Lay out the point ghosts for the events active at time `t`.
  *
  * Pure: given the same events, time, viewport and settings it always returns
@@ -592,6 +609,13 @@ export function layout(
     // but the sound reads as "just happened", not ongoing.
     const linger = lingerAlpha(event, t, settings.reducedMotion, cfg);
 
+    // A per-label sprite override (task 36.3): e.g. a Helicopter (vehicle
+    // family) draws the helicopter sprite, not the wheeled-car ghost. Only set
+    // when the specific label has an override, so the family sprite is used
+    // otherwise. With `exactOptionalPropertyTypes`, the keys are added only
+    // when defined.
+    const override = spriteOverrideFor(event, cfg);
+
     sprites.push({
       family: event.family,
       x,
@@ -602,6 +626,7 @@ export function layout(
       opacity: clamp01(edgeOpacity * faceDim * linger),
       label: spriteLabel(event, s, settings.lang, t),
       arriving: isArriving(event, t, cfg),
+      ...(override != null ? { spriteOverride: override, spriteOverrideKey: event.topLabel! } : {}),
     });
   });
 

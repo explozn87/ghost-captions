@@ -141,15 +141,41 @@ const FAMILY_PATH_SOURCE: Record<Family, string> = {
  * A loader for a family's sprite image. The default uses the browser `Image`;
  * tests inject a fake so the preload/fallback paths run without a DOM. Returns
  * a drawable image source once loaded, or null if it failed to load.
+ *
+ * `loadUrl` (task 36.3) loads an arbitrary sprite PNG by path, used for the
+ * per-label sprite override (e.g. the helicopter). It is optional so existing
+ * fakes keep working; when absent or it reports no image, `draw` falls back to
+ * the built-in override silhouette for the label.
  */
 export interface SpriteImageLoader {
   load(family: Family): { image: CanvasImageSource | null; loaded: boolean };
+  loadUrl?(url: string): { image: CanvasImageSource | null; loaded: boolean };
 }
 
 /** The path to a family's sprite PNG (task 16.5). */
 export function spriteImageUrl(family: Family): string {
   return `/ghosts/${family}.png`;
 }
+
+/**
+ * Built-in fallback silhouettes for per-label sprite overrides (task 36.3),
+ * keyed by the English `display_name`. When an override PNG is missing or not
+ * yet loaded, `draw` fills the matching path here rather than the family's
+ * ghost, so a Helicopter never shows the wheeled-vehicle silhouette while its
+ * image loads. Drawn in the same unit box [-1,-1]..[1,1] as the family paths.
+ */
+const OVERRIDE_PATH_SOURCE: Record<string, string> = {
+  // A helicopter: a body with a tail boom and a long horizontal rotor over the
+  // top, so it reads as a rotorcraft, not a car.
+  Helicopter:
+    'M -0.55 0.1 L 0.35 0.1 L 0.6 0.25 L 0.95 0.25 L 0.95 0.33 L 0.3 0.38 L -0.55 0.3 Z ' +
+    'M -0.95 0.33 L -0.55 0.3 L -0.55 0.1 L -0.9 0.12 Z ' +
+    'M -0.9 -0.25 L 0.9 -0.25 L 0.9 -0.17 L -0.9 -0.17 Z ' +
+    'M -0.04 -0.25 L 0.04 -0.25 L 0.04 0.1 L -0.04 0.1 Z',
+};
+
+/** Expose the override fallback path sources for tests (task 36.3). */
+export const overridePathSource = OVERRIDE_PATH_SOURCE;
 
 /**
  * The browser loader: kicks off one `Image` load per family and reports
@@ -160,7 +186,37 @@ export function spriteImageUrl(family: Family): string {
  */
 function makeBrowserLoader(): SpriteImageLoader {
   const cache = new Map<Family, { image: CanvasImageSource | null; loaded: boolean }>();
+  const urlCache = new Map<string, { image: CanvasImageSource | null; loaded: boolean }>();
   const hasImage = typeof Image !== 'undefined';
+  const loadBy = (
+    cacheMap: Map<string, { image: CanvasImageSource | null; loaded: boolean }>,
+    key: string,
+    url: string,
+  ) => {
+    const existing = cacheMap.get(key);
+    if (existing) return existing;
+    if (!hasImage) {
+      const miss = { image: null, loaded: false };
+      cacheMap.set(key, miss);
+      return miss;
+    }
+    const entry: { image: CanvasImageSource | null; loaded: boolean } = {
+      image: null,
+      loaded: false,
+    };
+    const img = new Image();
+    img.onload = () => {
+      entry.image = img;
+      entry.loaded = true;
+    };
+    img.onerror = () => {
+      entry.image = null;
+      entry.loaded = true; // resolved (as a failure) — fall back to silhouette
+    };
+    img.src = url;
+    cacheMap.set(key, entry);
+    return entry;
+  };
   return {
     load(family: Family) {
       const existing = cache.get(family);
@@ -187,6 +243,10 @@ function makeBrowserLoader(): SpriteImageLoader {
       cache.set(family, entry);
       return entry;
     },
+    loadUrl(url: string) {
+      // Per-label override images (task 36.3), cached by URL.
+      return loadBy(urlCache, url, url);
+    },
   };
 }
 
@@ -204,6 +264,11 @@ export function getDefaultSpriteLoader(): SpriteImageLoader {
  */
 export function preloadSpriteImages(loader: SpriteImageLoader = getDefaultSpriteLoader()): void {
   for (const family of Object.keys(FAMILY_PATH_SOURCE) as Family[]) loader.load(family);
+  // Preload the per-label override images too (task 36.3) so a Helicopter
+  // shows its own sprite without a frame of the rotor fallback.
+  if (loader.loadUrl) {
+    for (const url of Object.values(ghostConfig.spriteOverrideByLabel.value)) loader.loadUrl(url);
+  }
 }
 
 /**
@@ -231,6 +296,28 @@ function familyPaths(): Record<Family, Path2D | null> {
 /** Expose the raw path sources for tests (one distinct shape per family). */
 export const familyPathSource = FAMILY_PATH_SOURCE;
 
+/**
+ * Override silhouettes baked lazily to `Path2D` (task 36.3), the fallback for a
+ * per-label sprite override whose PNG is missing or not yet loaded. Keyed by
+ * the English `display_name`. Same lazy/`Path2D`-absent handling as the family
+ * paths.
+ */
+let bakedOverridePaths: Record<string, Path2D | null> | null = null;
+
+function overridePaths(): Record<string, Path2D | null> {
+  const hasPath2D = typeof Path2D !== 'undefined';
+  const keys = Object.keys(OVERRIDE_PATH_SOURCE);
+  const needBake =
+    bakedOverridePaths === null ||
+    (hasPath2D && keys.length > 0 && bakedOverridePaths[keys[0]!] === null);
+  if (needBake) {
+    const out: Record<string, Path2D | null> = {};
+    for (const key of keys) out[key] = hasPath2D ? new Path2D(OVERRIDE_PATH_SOURCE[key]!) : null;
+    bakedOverridePaths = out;
+  }
+  return bakedOverridePaths!;
+}
+
 /** Tremble amplitude as a fraction of the sprite radius. Deliberately small. */
 const TREMBLE_AMPLITUDE = 0.08;
 /** Fog pulse depth (opacity swing) and its slow frequency, well under 3 Hz. */
@@ -250,21 +337,40 @@ const LABEL_PAD_X = 6;
 const LABEL_PAD_Y = 4;
 
 /**
+ * The dialogue-subtitle font size (device px) for a frame of height `H` (task
+ * 36.1). Like the sound-label font, it scales with the frame from config
+ * (`dialogueFrameFrac`) and never drops below `labelMinPx`, so the spoken-word
+ * captions read the same at any player size. Pure over `H`, rounded to a whole
+ * pixel. A muted viewer needs the dialogue and the sound names to be legible
+ * together, so the sound-label font (below) is floored to this value.
+ */
+export function dialogueFontPx(H: number, cfg: GhostConfig = ghostConfig): number {
+  const px = Math.max(cfg.labelMinPx.value, cfg.dialogueFrameFrac.value * Math.max(0, H));
+  return Math.max(1, Math.round(px));
+}
+
+/**
  * The overlay label font size (device px) for a frame of height `H`, with an
- * optional dark-frame boost (task 27.3).
+ * optional dark-frame boost (task 27.3), floored to the dialogue font (task
+ * 36.1).
  *
- * The font is `max(labelMinPx, labelFrameFrac * H)` so a label grows with the
- * player and never drops below the readable floor on a small inline frame; on a
- * dark frame it is multiplied by `labelDarkFrameScale` so a pale label stays
- * legible on a dark scene. Pure over `H` and `dark`, so draw and its tests size
- * labels identically. The result is rounded to a whole pixel for crisp text.
+ * The base font is `max(labelMinPx, labelFrameFrac * H)`; it is then raised to
+ * at least {@link dialogueFontPx} for the same `H` so a sound name is never
+ * drawn smaller than the dialogue words — wrong for a viewer who cannot hear
+ * (Req 6.4). On a dark frame the result is multiplied by `labelDarkFrameScale`
+ * so a pale label stays legible on a dark scene; the dark-frame boost sits on
+ * top of the dialogue floor. Pure over `H` and `dark`, so draw and its tests
+ * size labels identically. The result is rounded to a whole pixel for crisp
+ * text.
  */
 export function labelFontPx(
   H: number,
   dark = false,
   cfg: GhostConfig = ghostConfig,
 ): number {
-  const base = Math.max(cfg.labelMinPx.value, cfg.labelFrameFrac.value * Math.max(0, H));
+  const own = Math.max(cfg.labelMinPx.value, cfg.labelFrameFrac.value * Math.max(0, H));
+  // Never smaller than the dialogue words at this frame size (task 36.1).
+  const base = Math.max(own, dialogueFontPx(H, cfg));
   const scaled = dark ? base * cfg.labelDarkFrameScale.value : base;
   return Math.max(1, Math.round(scaled));
 }
@@ -775,9 +881,19 @@ export function draw(
       // sits on top of the ghost image. placeLabels then clamps it into the
       // frame and clear of other plates. Under reduced motion an arriving label
       // is drawn bold in place of the scale pop (task 23.5).
+      //
+      // A ghost never appears without its name (task 36.2): on arrival the
+      // ghost sprite fades/pops in, so its measured opacity can start near 0
+      // and dip below LABEL_VISIBLE_FLOOR, which would make drawLabelAt skip
+      // the plate and leave a nameless ghost for a frame (measured on Tears of
+      // Steel: the volley ghost was drawn with no label until 0.5 s in). The
+      // label must carry the information from the first arrival frame (Req
+      // 6.4), so while the sprite is arriving its label is drawn at full
+      // opacity regardless of the sprite's fade-in alpha.
       const labelTop = cy + dy + radius + LABEL_BELOW_GAP;
       const bold = reducedMotion && sprite.arriving;
-      const pending = measureLabel(octx, sprite.label, cx + dx, labelTop, sprite.opacity, bold, fontPx);
+      const labelOpacity = sprite.arriving ? 1 : sprite.opacity;
+      const pending = measureLabel(octx, sprite.label, cx + dx, labelTop, labelOpacity, bold, fontPx);
       if (i === bigIndex) bigLabels.push(pending);
       else markerLabels.push(pending);
     });
@@ -1190,6 +1306,13 @@ function drawAmbientSprite(
  * Draw a point ghost: the family's PNG sprite when it is loaded, else the
  * Path2D silhouette fallback (task 16.5). Both are drawn at the sprite's
  * opacity. The sprite fills a box of side `2*radius` centred at (cx, cy).
+ *
+ * Per-label override (task 36.3): when the sprite carries a `spriteOverride`
+ * URL (e.g. a Helicopter, which maps to `vehicle` but is not a wheeled
+ * vehicle), that image is drawn instead of the family sprite. If the override
+ * image is missing or not yet loaded, the fallback is the built-in override
+ * silhouette for the label (a rotor for Helicopter), NOT the family's ghost, so
+ * the picture never shows a car next to the word "Helicopter".
  */
 function drawGhost(
   ctx: Ctx2D,
@@ -1199,6 +1322,35 @@ function drawGhost(
   radius: number,
   loader: SpriteImageLoader,
 ): void {
+  // 1) Per-label override image, when the label has one (task 36.3).
+  if (sprite.spriteOverride && loader.loadUrl) {
+    const entry = loader.loadUrl(sprite.spriteOverride);
+    if (entry.loaded && entry.image) {
+      ctx.save();
+      ctx.globalAlpha = clamp01(sprite.opacity) * 0.95;
+      const side = radius * 2;
+      ctx.drawImage(entry.image, cx - radius, cy - radius, side, side);
+      ctx.restore();
+      return;
+    }
+    // Override image missing or not yet loaded: fall back to the override's own
+    // silhouette (e.g. a rotor for Helicopter), not the family ghost.
+    const key = sprite.spriteOverrideKey;
+    const overridePath = key != null ? overridePaths()[key] : undefined;
+    if (overridePath) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(radius, radius);
+      ctx.globalAlpha = clamp01(sprite.opacity) * 0.92;
+      ctx.fillStyle = 'rgba(236,240,248,0.92)';
+      ctx.fill(overridePath);
+      ctx.restore();
+      return;
+    }
+    // No built-in override silhouette either: fall through to the family art.
+  }
+
+  // 2) The family sprite PNG, when loaded.
   const entry = loader.load(sprite.family);
   if (entry.loaded && entry.image) {
     ctx.save();
@@ -1208,7 +1360,7 @@ function drawGhost(
     ctx.restore();
     return;
   }
-  // Fallback silhouette.
+  // 3) Fallback family silhouette.
   const path = familyPaths()[sprite.family];
   if (!path) return;
   ctx.save();
@@ -1262,9 +1414,15 @@ function clamp01(x: number): number {
   return x < 0 ? 0 : x > 1 ? 1 : x;
 }
 
-/** Dialogue subtitle typography (task 19.2), larger than the ghost labels. */
-const DIALOGUE_FONT_PX = 22;
-const DIALOGUE_LINE_PX = 30;
+/**
+ * Dialogue subtitle typography (task 19.2, scaled per frame in task 36.1). The
+ * font is now `dialogueFontPx(H)` (a fraction of the frame height, floored to
+ * `labelMinPx`) rather than a fixed size, so the spoken words scale with the
+ * player exactly like the sound labels, and the sound-label font is guaranteed
+ * at least as large (`labelFontPx >= dialogueFontPx`). The line height tracks
+ * the font. These paddings and margins are frame-independent.
+ */
+const DIALOGUE_LINE_FACTOR = 1.36; // line height ≈ 1.36 × font (was 30/22)
 const DIALOGUE_PAD_X = 12;
 const DIALOGUE_PAD_Y = 8;
 /** Bottom margin of the dialogue plate as a fraction of the viewport height. */
@@ -1272,20 +1430,30 @@ const DIALOGUE_BOTTOM_FRAC = 0.03;
 /** At most two lines are shown (task 19.2). */
 const DIALOGUE_MAX_LINES = 2;
 
+/** The line height (device px) for a dialogue font of `fontPx` (task 36.1). */
+function dialogueLinePx(fontPx: number): number {
+  return Math.round(fontPx * DIALOGUE_LINE_FACTOR);
+}
+
 /**
  * Split a dialogue cue into at most two display lines (task 19.2). Explicit
  * newlines in the cue are honoured first; a long single line is wrapped on
  * word boundaries using the measured text width against `maxWidth`. If the
  * text still does not fit in two lines, the second line is truncated with an
  * ellipsis so the plate never grows past two lines.
+ *
+ * `fontPx` (task 36.1) is the dialogue font for the current frame; it defaults
+ * to the `labelMinPx` floor so a caller without a frame height still measures
+ * sensibly.
  */
 export function wrapDialogueLines(
   ctx: Pick<Ctx2D, 'measureText' | 'font'>,
   text: string,
   maxWidth: number,
+  fontPx: number = ghostConfig.labelMinPx.value,
 ): string[] {
   const prevFont = ctx.font;
-  ctx.font = `${DIALOGUE_FONT_PX}px sans-serif`;
+  ctx.font = `${fontPx}px sans-serif`;
   const fits = (s: string) => ctx.measureText(s).width <= maxWidth;
 
   const rawLines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
@@ -1339,10 +1507,12 @@ export function measureDialogueBandFrac(
   if (text == null || text.trim().length === 0) return 0;
   const H = ctx.canvas.height;
   if (H <= 0) return 0;
+  const fontPx = dialogueFontPx(H);
+  const linePx = dialogueLinePx(fontPx);
   const maxWidth = ctx.canvas.width * 0.9 - DIALOGUE_PAD_X * 2;
-  const lines = wrapDialogueLines(ctx, text, maxWidth);
+  const lines = wrapDialogueLines(ctx, text, maxWidth, fontPx);
   if (lines.length === 0) return 0;
-  const plateH = lines.length * DIALOGUE_LINE_PX + DIALOGUE_PAD_Y * 2;
+  const plateH = lines.length * linePx + DIALOGUE_PAD_Y * 2;
   const totalPx = plateH + H * DIALOGUE_BOTTOM_FRAC;
   return totalPx / H;
 }
@@ -1355,12 +1525,14 @@ export function measureDialogueBandFrac(
  * caller passing the measured band fraction to `layout`/`draw`.
  */
 function drawDialogue(ctx: Ctx2D, text: string, W: number, H: number): void {
+  const fontPx = dialogueFontPx(H);
+  const linePx = dialogueLinePx(fontPx);
   const maxWidth = W * 0.9 - DIALOGUE_PAD_X * 2;
-  const lines = wrapDialogueLines(ctx, text, maxWidth);
+  const lines = wrapDialogueLines(ctx, text, maxWidth, fontPx);
   if (lines.length === 0) return;
 
   ctx.save();
-  ctx.font = `${DIALOGUE_FONT_PX}px sans-serif`;
+  ctx.font = `${fontPx}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
@@ -1370,7 +1542,7 @@ function drawDialogue(ctx: Ctx2D, text: string, W: number, H: number): void {
     if (w > widest) widest = w;
   }
   const plateW = widest + DIALOGUE_PAD_X * 2;
-  const plateH = lines.length * DIALOGUE_LINE_PX + DIALOGUE_PAD_Y * 2;
+  const plateH = lines.length * linePx + DIALOGUE_PAD_Y * 2;
   const plateX = W / 2 - plateW / 2;
   const plateY = H - plateH - H * DIALOGUE_BOTTOM_FRAC;
 
@@ -1380,7 +1552,7 @@ function drawDialogue(ctx: Ctx2D, text: string, W: number, H: number): void {
 
   ctx.fillStyle = 'rgba(245,247,252,1)';
   lines.forEach((line, i) => {
-    ctx.fillText(line, W / 2, plateY + DIALOGUE_PAD_Y + i * DIALOGUE_LINE_PX);
+    ctx.fillText(line, W / 2, plateY + DIALOGUE_PAD_Y + i * linePx);
   });
   ctx.restore();
 }
