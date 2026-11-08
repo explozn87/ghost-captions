@@ -12,6 +12,7 @@ import {
   CENTRE_FACE_OPACITY,
   MARKER_SCALE,
   MAX_TREMBLE_HZ,
+  TOP_MARGIN,
   type Viewport,
   type OverlaySettings,
 } from '../src/overlay/layout.ts';
@@ -593,5 +594,48 @@ describe('layout: caption band grows for dialogue / burned-in subtitles (task 19
       const radiusFracH = (baseRadiusFrac() * sp.scale * minDim) / vp.height;
       expect(sp.y + radiusFracH).toBeLessThanOrEqual(bandTopFrac + 1e-9);
     }
+  });
+});
+
+describe('layout: ghost heads stay in the frame (task 22.3)', () => {
+  it('a large ghost sits at y >= its radius + TOP_MARGIN, so its head is never clipped', () => {
+    const vp: Viewport = { width: 1000, height: 1000 };
+    // One loud, large ghost at the top band; sizeScale large.
+    const ev = makeEvent({ family: 'vehicle', side: 'left', start: 0, end: 10, loudness: 1 });
+    const sp = layout([ev], 5, vp, { ...defaultSettings, sizeScale: 1.2 })[0]!;
+    const minDim = Math.min(vp.width, vp.height);
+    const radiusFracH = (baseRadiusFrac() * sp.scale * minDim) / vp.height;
+    // The top of the ghost image (y - radiusFracH) stays inside the frame with
+    // the configured margin.
+    expect(sp.y).toBeGreaterThanOrEqual(radiusFracH + TOP_MARGIN - 1e-9);
+    expect(sp.y - radiusFracH).toBeGreaterThanOrEqual(0);
+  });
+
+  it('for arbitrary events a full-size ghost top never goes above the frame', () => {
+    const vp: Viewport = { width: 1200, height: 700 };
+    for (const family of FAMILIES) {
+      for (const sizeScale of [0.8, 1, 1.2]) {
+        const ev = makeEvent({ family, side: 'centre-unknown', start: 0, end: 10, loudness: 1 });
+        const sp = layout([ev], 5, vp, { ...defaultSettings, sizeScale })[0]!;
+        const minDim = Math.min(vp.width, vp.height);
+        const radiusFracH = (baseRadiusFrac() * sp.scale * minDim) / vp.height;
+        // Either the head-clear rule holds, or the caption band forced it up
+        // (y pinned to the band ceiling) on a cramped frame — never clipped at
+        // the top beyond a tiny epsilon.
+        expect(sp.y - radiusFracH).toBeGreaterThanOrEqual(-1e-6);
+      }
+    }
+  });
+
+  it('on a very small viewport the caption-band rule still wins (ghost not pushed into the band)', () => {
+    // A tiny viewport where a full-size ghost cannot both clear its head and
+    // stay above the band: the band must win (sprite stays above it).
+    const vp: Viewport = { width: 200, height: 200 };
+    const ev = makeEvent({ family: 'vehicle', side: 'centre-unknown', start: 0, end: 10, loudness: 1 });
+    const sp = layout([ev], 5, vp, { ...defaultSettings, sizeScale: 1.2 })[0]!;
+    const minDim = Math.min(vp.width, vp.height);
+    const radiusFracH = (baseRadiusFrac() * sp.scale * minDim) / vp.height;
+    const bandTop = 1 - CAPTION_BAND;
+    expect(sp.y + radiusFracH).toBeLessThanOrEqual(bandTop + 1e-6);
   });
 });

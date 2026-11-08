@@ -23,6 +23,7 @@ import { draw, preloadSpriteImages, measureDialogueBandFrac } from '../overlay/d
 import { activeDialogueCue } from '../subtitles/parse.ts';
 import { ghostConfig } from '../config/ghost.config.ts';
 import type { Strings } from '../i18n/index.ts';
+import { soundNoun } from '../i18n/soundLabel.ts';
 import type { Settings } from './settings.ts';
 import {
   toOverlaySettings,
@@ -30,6 +31,8 @@ import {
   isVideoSilent,
   overlayShouldShow,
   chipStateFor,
+  missedCount,
+  latestMissedEvent,
 } from './settings.ts';
 
 export interface PlayerProps {
@@ -123,6 +126,19 @@ export function Player({
   const [chipVisible, setChipVisible] = useState(true);
   const silentRef = useRef(true);
   silentRef.current = silent;
+
+  // "Sounds the captions missed" counter (task 22.5): the current playback time
+  // (so the count can rise as events start) and whether the video has ended (to
+  // swap the chip for the centred end card). `videoTime` is updated from the
+  // draw loop below; it is cheap because the counter only changes when an event
+  // starts.
+  const [videoTime, setVideoTime] = useState(0);
+  const [ended, setEnded] = useState(false);
+  // The brief "+1 <sound>" flash and one scale pulse when the count rises
+  // (task 22.5). `flash` holds the newest sound's name while visible, or null.
+  const [flash, setFlash] = useState<string | null>(null);
+  const [pulse, setPulse] = useState(false);
+  const prevMissedRef = useRef(0);
   // The animated overlay opacity (0..1), read and written by the draw loop so
   // it fades independently of React renders.
   const overlayAlphaRef = useRef(1);
@@ -155,6 +171,34 @@ export function Player({
     update();
     video.addEventListener('volumechange', update);
     return () => video.removeEventListener('volumechange', update);
+  }, [src]);
+
+  // Track whether the video has ended, to show the end card (task 22.5). Any
+  // play/seek back into the clip clears it so "Watch again" and the scrubber
+  // both bring the ghosts back. The missed-sounds counter follows the video's
+  // own `timeupdate` (not the overlay draw loop) so it keeps counting even
+  // where there is no canvas to draw on (e.g. tests).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onEnded = () => setEnded(true);
+    const onPlaying = () => setEnded(false);
+    const onSeeking = () => {
+      if (!video.ended) setEnded(false);
+    };
+    const onTime = () => setVideoTime(video.currentTime);
+    video.addEventListener('ended', onEnded);
+    video.addEventListener('play', onPlaying);
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('seeking', onSeeking);
+    video.addEventListener('timeupdate', onTime);
+    return () => {
+      video.removeEventListener('ended', onEnded);
+      video.removeEventListener('play', onPlaying);
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('seeking', onSeeking);
+      video.removeEventListener('timeupdate', onTime);
+    };
   }, [src]);
 
   // Hide the status chip 2 s after it was last shown, unless the pointer is
@@ -285,6 +329,51 @@ export function Player({
         ? strings.ui.chipSoundOff
         : strings.ui.chipSoundOn;
 
+  // "Sounds the captions missed" counter (task 22.5). The count follows the
+  // same hidden-family and speech rules as the overlay, and both the running
+  // chip and the end card read it. The counter and card follow the show-when
+  // overlay visibility (task 21): when the sound overlay is resting they hide.
+  const overlayVisible = overlayShouldShow(settings.showWhen, silent);
+  const missed = missedCount(track.events, videoTime, settings);
+  // The newest missed sound's name, for the brief "+1 <sound>" flash.
+  const newest = latestMissedEvent(track.events, videoTime, settings);
+  const newestNoun = newest ? soundNoun(newest, strings, settings.lang) : '';
+  const missedText = strings.ui.missedCount.replace('{n}', String(missed));
+  const plusOneText = strings.ui.missedPlusOne.replace('{sound}', newestNoun);
+  const endCardText = strings.ui.missedEndCard.replace('{n}', String(missed));
+
+  // When the count rises, show "+1 <sound>" briefly and give the chip one
+  // gentle scale pulse (none under reduced motion) (task 22.5). A reset to a
+  // lower count (seeking back, watch again) just updates the baseline without a
+  // flash.
+  useEffect(() => {
+    const prev = prevMissedRef.current;
+    prevMissedRef.current = missed;
+    if (missed <= prev) return;
+    setFlash(newestNoun);
+    if (!settings.reducedMotion) {
+      setPulse(true);
+    }
+    const flashId = setTimeout(() => setFlash(null), 1500);
+    const pulseId = setTimeout(() => setPulse(false), 400);
+    return () => {
+      clearTimeout(flashId);
+      clearTimeout(pulseId);
+    };
+  }, [missed, newestNoun, settings.reducedMotion]);
+
+  const watchAgain = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    setEnded(false);
+    video.currentTime = 0;
+    // `play()` returns a Promise in browsers but may return undefined in some
+    // environments (e.g. jsdom); guard the `.catch` so autoplay rejection never
+    // throws.
+    const played = video.play() as Promise<void> | undefined;
+    if (played && typeof played.catch === 'function') played.catch(() => {});
+  };
+
   return (
     <div
       ref={playerRef}
@@ -328,6 +417,29 @@ export function Player({
       >
         {chipText}
       </button>
+
+      {/* "Sounds the captions missed" counter (task 22.5): top-right, inside
+          the player so it shows in full screen too. It follows the show-when
+          overlay visibility, and becomes a centred end card when the video
+          ends. Information is in text, not only motion. */}
+      {overlayVisible && !ended && (
+        <div
+          className={`player__missed${pulse ? ' player__missed--pulse' : ''}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="player__missed-count">{missedText}</span>
+          {flash && <span className="player__missed-plus">{plusOneText}</span>}
+        </div>
+      )}
+      {overlayVisible && ended && (
+        <div className="player__endcard" role="status" aria-live="polite">
+          <p className="player__endcard-text">{endCardText}</p>
+          <button type="button" className="player__endcard-again" onClick={watchAgain}>
+            {strings.ui.watchAgain}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

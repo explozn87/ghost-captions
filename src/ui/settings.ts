@@ -149,6 +149,55 @@ export function currentEventIndex(events: readonly SoundEvent[], t: number): num
   return idx;
 }
 
+/**
+ * How many sound events the ordinary captions would have missed by time `t`
+ * (task 22.5): the count of SHOWN non-speech events whose start is at or before
+ * `t`. "Shown" means the event is actually drawn for the viewer:
+ *   - speech is excluded (spoken words belong to ordinary captions, Req 3.2);
+ *   - an event of a family the viewer has hidden ("Hide sound types") is
+ *     excluded;
+ *   - unknown events hidden by the unknown rule never reach the track in the
+ *     first place (`showUnknownEvents` off, task 20.1), so the track already
+ *     reflects that and this function needs no extra check for it.
+ *
+ * Pure: it reads only the events, the time and the settings, so the counter
+ * chip and the end card (task 22.5) are both driven by a tested function rather
+ * than ad-hoc counting in the component.
+ */
+export function missedCount(
+  events: readonly SoundEvent[],
+  t: number,
+  settings: Pick<Settings, 'mutedFamilies'>,
+): number {
+  let n = 0;
+  for (const e of events) {
+    if (e.isSpeech) continue;
+    if (settings.mutedFamilies.has(e.family)) continue;
+    if (e.start <= t) n++;
+  }
+  return n;
+}
+
+/**
+ * The most recent SHOWN non-speech event at or before time `t` (task 22.5), or
+ * null when none — used to name the newest missed sound ("+1 Gunshot") when the
+ * counter increases. Honours the same hidden-family and speech rules as
+ * {@link missedCount}.
+ */
+export function latestMissedEvent(
+  events: readonly SoundEvent[],
+  t: number,
+  settings: Pick<Settings, 'mutedFamilies'>,
+): SoundEvent | null {
+  let latest: SoundEvent | null = null;
+  for (const e of events) {
+    if (e.isSpeech) continue;
+    if (settings.mutedFamilies.has(e.family)) continue;
+    if (e.start <= t && (latest === null || e.start >= latest.start)) latest = e;
+  }
+  return latest;
+}
+
 /** A video is "silent" to the viewer when muted or at zero volume (task 21.1). */
 export function isVideoSilent(muted: boolean, volume: number): boolean {
   return muted || volume <= 0;

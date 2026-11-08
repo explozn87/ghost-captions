@@ -92,6 +92,15 @@ export function captionBandOf(settings: OverlaySettings): number {
  */
 const Y_MIN = 0.1;
 
+/**
+ * Minimum gap (fraction of viewport height) between the top of a ghost's image
+ * and the top of the frame, so a ghost's head is never clipped (task 22.3).
+ * The measured defect: car and gunshot ghosts were clipped by 30–50 px at the
+ * top because `y` could be smaller than the sprite's half-height.
+ */
+const TOP_MARGIN = 0.02;
+export { TOP_MARGIN };
+
 /** Horizontal band centres as a fraction of width, per side (design.md). */
 const BAND_CENTRE: Record<Side, number> = {
   left: 0.225, // middle of 15–30 %
@@ -425,11 +434,25 @@ export function layout(
       ? (baseRadius * scale * minDim) / viewport.height
       : 0;
 
+    // The top of the ghost image must never go above the frame (task 22.3):
+    // the sprite box spans `y ± radiusFracH`, so the centre needs to sit at
+    // least `radiusFracH + TOP_MARGIN` from the top. The caption-band rule
+    // (yMax) still wins on very small viewports — when the two bounds cross the
+    // ghost is simply placed as high as the caption band allows and `draw`
+    // shrinks it there — so we never push a ghost down into the caption band to
+    // satisfy the head rule.
+    const yTopClear = radiusFracH + TOP_MARGIN;
     const yMax = 1 - captionBand - radiusFracH;
     const slots = Math.max(1, drawable.length);
     const frac = slots > 1 ? i / (slots - 1) : 0;
+    // The usable vertical range: from the head-clear floor (never above the
+    // frame) up to the caption-band ceiling. When the viewport is so small that
+    // the floor would pass the ceiling, the ceiling wins (caption band first).
+    const yLow = Math.max(Y_MIN, yTopClear);
     const yHigh = Math.max(Y_MIN, yMax);
-    const y = clamp(Y_MIN + frac * (yHigh - Y_MIN), Y_MIN, yHigh);
+    const y = yHigh >= yLow
+      ? clamp(yLow + frac * (yHigh - yLow), yLow, yHigh)
+      : yHigh;
 
     const x = clamp(pointX(event, t, settings.reducedMotion, cfg), OFFSCREEN_X.left, OFFSCREEN_X.right);
 

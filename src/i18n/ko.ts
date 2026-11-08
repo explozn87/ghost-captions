@@ -113,6 +113,11 @@ export const ko: Strings = {
     fullscreen: '전체 화면(유령 포함)',
     exitFullscreen: '전체 화면 나가기',
 
+    missedCount: '자막이 놓친 소리: {n}',
+    missedPlusOne: '+1 {sound}',
+    missedEndCard: '자막만 봤다면 이 영상에서 소리 {n}개를 놓쳤습니다.',
+    watchAgain: '다시 보기',
+
     colTime: '시간',
     colSound: '소리',
     colDirection: '방향',

@@ -114,6 +114,11 @@ export const en: Strings = {
     fullscreen: 'Full screen (with ghosts)',
     exitFullscreen: 'Exit full screen',
 
+    missedCount: 'Sounds captions miss: {n}',
+    missedPlusOne: '+1 {sound}',
+    missedEndCard: 'Captions would have missed {n} sounds in this clip.',
+    watchAgain: 'Watch again',
+
     colTime: 'Time',
     colSound: 'Sound',
     colDirection: 'Direction',

@@ -1,10 +1,17 @@
 import { describe, it, expect, beforeAll } from 'vitest';
+import fc from 'fast-check';
 import {
   draw,
   familyPathSource,
   spriteImageUrl,
   measureDialogueBandFrac,
   wrapDialogueLines,
+  placeLabels,
+  labelPlateSize,
+  EDGE_MARGIN,
+  LABEL_GAP,
+  AMBIENT_SPRITE_MIN_OPACITY,
+  type LabelRect,
   type Ctx2D,
   type SpriteImageLoader,
 } from '../src/overlay/draw.ts';
@@ -564,5 +571,169 @@ describe('measureDialogueBandFrac (task 19.2)', () => {
     const twoLine = measureDialogueBandFrac(ctx, 'First line\nSecond line');
     expect(twoLine).toBeGreaterThan(oneLine);
     expect(oneLine).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 22: read at a glance.
+// ---------------------------------------------------------------------------
+
+/** Build a LabelRect from a text width and an anchor, as draw does. */
+function rectFor(textWidth: number, x: number, y: number): LabelRect {
+  const { w, h } = labelPlateSize(textWidth);
+  return { x, y, w, h };
+}
+
+describe('placeLabels: never leaves the frame (task 22.1)', () => {
+  it('clamps a plate whose right edge would pass the frame back inside', () => {
+    const W = 400;
+    const H = 300;
+    // A wide plate anchored hard right would overflow; it must be pulled in.
+    const rect = rectFor(60, W + 50, 40); // centre far past the right edge
+    const [out] = placeLabels([rect], W, H, 0.18);
+    expect(out!.x + out!.w / 2).toBeLessThanOrEqual(W - EDGE_MARGIN + 1e-9);
+    expect(out!.x - out!.w / 2).toBeGreaterThanOrEqual(EDGE_MARGIN - 1e-9);
+  });
+
+  it('clamps a plate that would pass the left edge', () => {
+    const W = 400;
+    const H = 300;
+    const rect = rectFor(60, -40, 40);
+    const [out] = placeLabels([rect], W, H, 0.18);
+    expect(out!.x - out!.w / 2).toBeGreaterThanOrEqual(EDGE_MARGIN - 1e-9);
+  });
+});
+
+describe('placeLabels: property — inside the frame, no overlaps, clear of the band (task 22.2)', () => {
+  it('for arbitrary plates the outputs are all inside the frame, non-overlapping and above the caption band', () => {
+    const rectArb = fc.record({
+      x: fc.double({ min: -200, max: 1200, noNaN: true }),
+      y: fc.double({ min: -50, max: 900, noNaN: true }),
+      textWidth: fc.double({ min: 10, max: 180, noNaN: true }),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(rectArb, { minLength: 1, maxLength: 7 }),
+        fc.integer({ min: 400, max: 2000 }),
+        fc.integer({ min: 400, max: 1400 }),
+        fc.double({ min: 0.1, max: 0.4, noNaN: true }),
+        (specs, W, H, band) => {
+          const rects = specs.map((s) => rectFor(s.textWidth, s.x, s.y));
+          const out = placeLabels(rects, W, H, band);
+          const bandTop = H * (1 - band);
+          for (const r of out) {
+            // Inside the frame horizontally (plates narrower than the frame).
+            if (r.w <= W - EDGE_MARGIN * 2) {
+              expect(r.x - r.w / 2).toBeGreaterThanOrEqual(EDGE_MARGIN - 1e-6);
+              expect(r.x + r.w / 2).toBeLessThanOrEqual(W - EDGE_MARGIN + 1e-6);
+            }
+            // Never above the frame.
+            expect(r.y).toBeGreaterThanOrEqual(-1e-6);
+            // Never into the caption band.
+            expect(r.y + r.h).toBeLessThanOrEqual(bandTop + 1e-6);
+          }
+          // No two output plates intersect.
+          for (let i = 0; i < out.length; i++) {
+            for (let j = i + 1; j < out.length; j++) {
+              const a = out[i]!;
+              const b = out[j]!;
+              const xOverlap = Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 1e-6;
+              const yOverlap = a.y < b.y + b.h - 1e-6 && b.y < a.y + a.h - 1e-6;
+              expect(xOverlap && yOverlap).toBe(false);
+            }
+          }
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  it('pushes a later overlapping plate down by at least LABEL_GAP below the earlier one', () => {
+    const W = 800;
+    const H = 600;
+    // Two plates at the same anchor overlap; the second must move below.
+    const a = rectFor(40, 400, 60);
+    const b = rectFor(40, 400, 62); // nearly on top of a
+    const [outA, outB] = placeLabels([a, b], W, H, 0.18);
+    expect(outB!.y).toBeGreaterThanOrEqual(outA!.y + outA!.h + LABEL_GAP - 1e-6);
+  });
+});
+
+describe('draw: labels placed as a group, clamped and non-overlapping (tasks 22.1, 22.2)', () => {
+  it('a label anchored at the right edge is drawn inside the frame', () => {
+    const W = 400;
+    const ctx = makeFakeCtx(W, 300);
+    // A right-edge sprite with a long label would overflow without clamping.
+    draw(ctx, [sprite({ x: 1, label: 'a very long sound label here' })], [], 0, false, {
+      loader: silhouetteOnlyLoader,
+    });
+    // The label plate is a fillRect with the dark plate colour; its right edge
+    // (x + w) must be within the frame.
+    const plate = ctx.calls.find(
+      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('12,14,20'),
+    )!;
+    const [px, , pw] = plate.args as number[];
+    expect(px! + pw!).toBeLessThanOrEqual(W - EDGE_MARGIN + 1e-6);
+    expect(px!).toBeGreaterThanOrEqual(EDGE_MARGIN - 1e-6);
+  });
+
+  it('two sprites with the same anchor get non-overlapping label plates', () => {
+    const ctx = makeFakeCtx(800, 600);
+    draw(
+      ctx,
+      [sprite({ x: 0.5, y: 0.3, label: 'alpha' }), sprite({ x: 0.5, y: 0.3, label: 'beta' })],
+      [],
+      0,
+      false,
+      { loader: silhouetteOnlyLoader },
+    );
+    const plates = ctx.calls.filter(
+      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('12,14,20'),
+    );
+    expect(plates.length).toBe(2);
+    const [x0, y0, w0, h0] = plates[0]!.args as number[];
+    const [x1, y1, w1, h1] = plates[1]!.args as number[];
+    const xOverlap = x0! < x1! + w1! && x1! < x0! + w0!;
+    const yOverlap = y0! < y1! + h1! && y1! < y0! + h0!;
+    expect(xOverlap && yOverlap).toBe(false);
+  });
+});
+
+describe('draw: ambient fog names itself on both bands (task 22.4)', () => {
+  it('a whole-frame fog draws its sprite and label in both the left and right bands', () => {
+    const W = 1000;
+    const loader = makeImageLoader();
+    const ctx = makeFakeCtx(W, 600);
+    draw(ctx, [], [fog({ family: 'wind', edge: 'all', label: 'wind' })], 0, false, { loader });
+    // Two ambient sprites (one per band) and two labels.
+    const images = ctx.calls.filter((c) => c.op === 'drawImage');
+    const texts = ctx.calls.filter((c) => c.op === 'fillText').map((c) => c.args[0]);
+    expect(images.length).toBe(2);
+    expect(texts.filter((t) => t === 'wind').length).toBe(2);
+    // One sprite on the left half, one on the right half.
+    const centresX = images.map((c) => (c.args[1] as number) + (c.args[3] as number) / 2);
+    expect(centresX.some((x) => x < W / 2)).toBe(true);
+    expect(centresX.some((x) => x > W / 2)).toBe(true);
+  });
+
+  it('a side fog draws exactly one sprite and one label in that band', () => {
+    const loader = makeImageLoader();
+    const ctx = makeFakeCtx(1000, 600);
+    draw(ctx, [], [fog({ family: 'rain', edge: 'left', label: 'rain' })], 0, false, { loader });
+    const images = ctx.calls.filter((c) => c.op === 'drawImage');
+    const texts = ctx.calls.filter((c) => c.op === 'fillText').map((c) => c.args[0]);
+    expect(images.length).toBe(1);
+    expect(texts.filter((t) => t === 'rain').length).toBe(1);
+  });
+
+  it('the ambient sprite stays at least AMBIENT_SPRITE_MIN_OPACITY while the fog is faint', () => {
+    const loader = makeImageLoader();
+    const ctx = makeFakeCtx(1000, 600);
+    // A faint fog (opacity 0.1) — the sprite must not fade with it.
+    draw(ctx, [], [fog({ family: 'wind', edge: 'left', label: 'wind', opacity: 0.1 })], 0, false, {
+      loader,
+    });
+    const image = ctx.calls.find((c) => c.op === 'drawImage')!;
+    expect(image.globalAlpha).toBeGreaterThanOrEqual(AMBIENT_SPRITE_MIN_OPACITY - 1e-9);
   });
 });

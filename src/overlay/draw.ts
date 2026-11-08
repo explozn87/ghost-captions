@@ -247,6 +247,175 @@ const LABEL_FONT_PX = 16;
 const LABEL_PAD_X = 6;
 const LABEL_PAD_Y = 4;
 
+/**
+ * Horizontal margin (device px) a label plate is kept clear of either frame
+ * edge (task 22.1): a plate is clamped into `[EDGE_MARGIN, W - EDGE_MARGIN]` so
+ * its text never leaves the frame. Measured defect: at 9.6 s the gunshot
+ * label's right edge was 81 px past the frame.
+ */
+export const EDGE_MARGIN = 8;
+
+/**
+ * Vertical gap (device px) left between two label plates when one is pushed
+ * clear of another so they never overlap (task 22.2). Measured defect: at
+ * 7.3 s the wind label (y 64) and car label (y 82) were only 18 px apart and
+ * overlapped.
+ */
+export const LABEL_GAP = 4;
+
+/**
+ * One label plate's geometry, in device pixels (tasks 22.1, 22.2). `x` is the
+ * plate's centre; `y` is its top; `w`/`h` its size. `placeLabels` reads and
+ * returns these; drawing happens afterwards from the resolved rectangle so a
+ * label is clamped into the frame and never overlaps another.
+ */
+export interface LabelRect {
+  /** Centre x of the plate in device px. */
+  x: number;
+  /** Top y of the plate in device px. */
+  y: number;
+  /** Plate width in device px. */
+  w: number;
+  /** Plate height in device px. */
+  h: number;
+}
+
+/** Whether two plates overlap (share any area). */
+function rectsIntersect(a: LabelRect, b: LabelRect): boolean {
+  const aL = a.x - a.w / 2;
+  const aR = a.x + a.w / 2;
+  const bL = b.x - b.w / 2;
+  const bR = b.x + b.w / 2;
+  if (aR <= bL || bR <= aL) return false;
+  if (a.y + a.h <= b.y || b.y + b.h <= a.y) return false;
+  return true;
+}
+
+/**
+ * Resolve a frame's label plates so none leaves the frame and none overlaps
+ * (tasks 22.1, 22.2). The input order is the priority order — the caller puts
+ * the big ghost first, then the ambient fogs, then the markers — and each later
+ * plate yields to the earlier ones it meets.
+ *
+ * Steps per plate, in input order:
+ *   1. clamp its centre horizontally so the whole plate sits in
+ *      `[EDGE_MARGIN, W - EDGE_MARGIN]` (task 22.1); the plate moves, not the
+ *      ghost;
+ *   2. while it intersects any already-placed plate, push it down by
+ *      `LABEL_GAP` below the lowest one it hits (task 22.2);
+ *   3. if pushing down would send it into the caption band (below
+ *      `H*(1-captionBand)`), push it up above the highest intersecting plate
+ *      instead, clamped so its top stays at `y >= 0`.
+ *
+ * Pure: it reads only the input rects and the frame/caption-band sizes and
+ * returns new rects, so the properties (no two outputs intersect, all inside
+ * the frame, none in the caption band) are covered by tests. When a frame is
+ * so crowded that a plate cannot be placed without touching the band, it is
+ * clamped to just above the band — the caption-band rule always wins (Req 6.5).
+ */
+export function placeLabels(
+  rects: readonly LabelRect[],
+  W: number,
+  H: number,
+  captionBand: number,
+): LabelRect[] {
+  const bandTop = H * (1 - clamp01(captionBand));
+  const placed: LabelRect[] = [];
+
+  for (const input of rects) {
+    // 1. Clamp horizontally so the whole plate is inside the frame (task 22.1).
+    const halfW = input.w / 2;
+    let x = input.x;
+    if (W >= input.w + EDGE_MARGIN * 2) {
+      x = clampNum(x, EDGE_MARGIN + halfW, W - EDGE_MARGIN - halfW);
+    } else {
+      // Plate wider than the frame: centre it as best we can.
+      x = W / 2;
+    }
+
+    let y = input.y;
+    const h = input.h;
+
+    // Highest allowed top so the plate stays clear of the caption band, and
+    // never above the frame.
+    const maxTop = Math.max(0, bandTop - h);
+    y = clampNum(y, 0, maxTop);
+
+    const candidate: LabelRect = { x, y, w: input.w, h };
+
+    // 2/3. Resolve overlaps against already-placed plates (task 22.2).
+    // Push down below the lowest intersecting plate; if that passes the caption
+    // band, push up above the highest intersecting plate instead.
+    let guard = 0;
+    for (;;) {
+      const hits = placed.filter((p) => rectsIntersect(candidate, p));
+      if (hits.length === 0) break;
+      if (guard++ > placed.length + 2) break; // safety; cannot loop forever
+      // Try pushing down below the lowest hit.
+      const lowestBottom = Math.max(...hits.map((p) => p.y + p.h));
+      const downY = lowestBottom + LABEL_GAP;
+      if (downY <= maxTop) {
+        candidate.y = downY;
+        continue;
+      }
+      // Pushing down would enter the caption band: push up instead, above the
+      // highest intersecting plate, clamped so the top stays in the frame.
+      const highestTop = Math.min(...hits.map((p) => p.y));
+      const upY = highestTop - LABEL_GAP - h;
+      candidate.y = Math.max(0, upY);
+      // One up move; if it still overlaps something above, the next loop pass
+      // tries again. The guard bounds the iterations.
+    }
+
+    placed.push(candidate);
+  }
+
+  return placed;
+}
+
+/** Clamp a number into [lo, hi]; if lo > hi, returns lo (degenerate frame). */
+function clampNum(x: number, lo: number, hi: number): number {
+  if (hi < lo) return lo;
+  return x < lo ? lo : x > hi ? hi : x;
+}
+
+/** The plate size (device px) for a label's text width (tasks 22.1, 22.2). */
+export function labelPlateSize(textWidth: number): { w: number; h: number } {
+  return { w: textWidth + LABEL_PAD_X * 2, h: LABEL_FONT_PX + LABEL_PAD_Y * 2 };
+}
+
+/**
+ * A label waiting to be placed (tasks 22.1, 22.2): its text, the opacity to
+ * draw it at, and its wished-for plate rectangle (centre x, top y, size). The
+ * rect is resolved against the other plates by `placeLabels` before drawing.
+ */
+interface PendingLabel {
+  text: string;
+  opacity: number;
+  rect: LabelRect;
+}
+
+/**
+ * Measure a label's plate at its wished-for anchor (`cx`, `topY`) without
+ * drawing it (tasks 22.1, 22.2). The anchor matches where the inline label used
+ * to sit (centred under the ghost); `placeLabels` then clamps it into the frame
+ * and clear of other plates, and `drawLabelAt` paints it.
+ */
+function measureLabel(
+  ctx: Ctx2D,
+  label: string,
+  cx: number,
+  topY: number,
+  opacity: number,
+): PendingLabel {
+  ctx.save();
+  ctx.font = `${LABEL_FONT_PX}px sans-serif`;
+  const textW = ctx.measureText(label).width;
+  ctx.restore();
+  const { w, h } = labelPlateSize(textW);
+  return { text: label, opacity, rect: { x: cx, y: topY, w, h } };
+}
+
 /** Options for `draw`, so the sprite loader can be injected in tests. */
 export interface DrawOptions {
   loader?: SpriteImageLoader;
@@ -309,12 +478,36 @@ export function draw(
   if (overlayAlpha > 0) {
     const octx = overlayAlpha < 1 ? makeAlphaScaledCtx(ctx, overlayAlpha) : ctx;
 
-    // Ambient edge fog sits behind the ghosts.
+    // Labels are collected first, then placed as a group so none leaves the
+    // frame (task 22.1) and none overlaps another (task 22.2). The collection
+    // order is the priority order placeLabels resolves in: the big ghost first,
+    // then the ambient fogs, then the markers. Fogs and ghosts themselves are
+    // drawn in their own z-order (fog behind ghosts); only the label plates are
+    // deferred so their positions can be resolved together.
+    const bigLabels: PendingLabel[] = [];
+    const ambientLabels: PendingLabel[] = [];
+    const markerLabels: PendingLabel[] = [];
+
+    // Ambient edge fog sits behind the ghosts. drawEdgeFog paints the vignette,
+    // texture and family sprite and returns the label plate(s) to place later
+    // (a whole-frame fog returns one plate per edge, task 22.4).
     for (const fog of fogs) {
-      drawEdgeFog(octx, fog, time, reducedMotion, loader, minDim, captionBand);
+      const pending = drawEdgeFog(octx, fog, time, reducedMotion, loader, minDim, captionBand);
+      ambientLabels.push(...pending);
     }
 
-    for (const sprite of sprites) {
+    // The loudest point ghost (largest scale) is the one big ghost; its label
+    // has top priority. Everything else is a marker.
+    let bigIndex = -1;
+    let bigScale = -Infinity;
+    sprites.forEach((sp, i) => {
+      if (sp.scale > bigScale) {
+        bigScale = sp.scale;
+        bigIndex = i;
+      }
+    });
+
+    sprites.forEach((sprite, i) => {
       const cx = sprite.x * W;
       const cy = sprite.y * H;
       const radius = BASE_RADIUS_PX * sprite.scale * minDim;
@@ -329,8 +522,25 @@ export function draw(
 
       drawFog(octx, cx + dx, cy + dy, radius, sprite.fog, time, reducedMotion);
       drawGhost(octx, sprite, cx + dx, cy + dy, radius, loader);
-      drawLabel(octx, sprite.label, cx + dx, cy + dy + radius * 0.2, sprite.opacity);
-    }
+      const pending = measureLabel(octx, sprite.label, cx + dx, cy + dy + radius * 0.2, sprite.opacity);
+      if (i === bigIndex) bigLabels.push(pending);
+      else markerLabels.push(pending);
+    });
+
+    // Resolve all plates together: big ghost, then ambient, then markers (task
+    // 22.2). Each surviving plate is drawn at its resolved rectangle, clamped
+    // into the frame and clear of the others and the caption band.
+    const pendings = [...bigLabels, ...ambientLabels, ...markerLabels];
+    const rects = placeLabels(
+      pendings.map((p) => p.rect),
+      W,
+      H,
+      captionBand,
+    );
+    pendings.forEach((p, i) => {
+      const r = rects[i]!;
+      drawLabelAt(octx, p.text, r, p.opacity);
+    });
   }
 
   // The active dialogue cue in the bottom caption band (task 19.2): drawn last
@@ -409,6 +619,14 @@ function drawFog(
 const FOG_RGB = '205,200,240';
 
 /**
+ * Minimum opacity an ambient event's family sprite is drawn at while the event
+ * is active (task 22.4), so it stays clearly visible next to its texture and
+ * never fades to a faint shape while its label is still on. The effective
+ * sprite opacity is `max(this, fog.opacity)`.
+ */
+export const AMBIENT_SPRITE_MIN_OPACITY = 0.6;
+
+/**
  * Draw one ambient event as an edge vignette (tasks 16.3, 18.1–18.3). A linear
  * gradient of pale lavender light fades from the covered edge to fully
  * transparent by `FOG_CLEAR_CENTRE` of the way across, so the central 60% of
@@ -418,12 +636,22 @@ const FOG_RGB = '205,200,240';
  * slow steady vignette, so thunder reads as one slow pulse, never a white
  * flash, Req 10.3).
  *
- * Inside the band it adds a per-family motion texture (task 18.2: wind
- * streaks, rain streaks, a thunder swell, drifting notes) and the family's
- * sprite at half the point-ghost size with the label on a backing plate (task
- * 18.3), both in the upper part of the band so the viewer can identify the
- * sound without the animation (Req 6.3, 6.4) and nothing reaches the caption
- * band (Req 6.5). Reduced motion freezes the texture at the same density.
+ * Inside each covered edge band it adds a per-family motion texture (task
+ * 18.2) and the family's sprite at half the point-ghost size (task 18.3), in
+ * the upper part of the band, so the viewer can identify the sound without the
+ * animation (Req 6.3, 6.4) and nothing reaches the caption band (Req 6.5).
+ * Reduced motion freezes the texture at the same density.
+ *
+ * Task 22.4: a whole-frame fog paints its sprite in BOTH the left and right
+ * bands (not one sprite in the top centre), so the drifting streaks or notes
+ * always sit next to the sprite that names them, and this function returns one
+ * label plate per painted band. While the ambient event is active its sprite is
+ * drawn at an opacity of at least `AMBIENT_SPRITE_MIN_OPACITY`, so it no longer
+ * fades to a faint shape while the label is still on.
+ *
+ * It paints the vignette, texture and sprite itself but DOES NOT draw its
+ * label(s): it returns them as {@link PendingLabel}s so the caller can resolve
+ * every plate of the frame together (tasks 22.1, 22.2).
  */
 function drawEdgeFog(
   ctx: Ctx2D,
@@ -433,8 +661,8 @@ function drawEdgeFog(
   loader: SpriteImageLoader,
   minDim: number,
   captionBand: number,
-): void {
-  if (fog.opacity <= 0) return;
+): PendingLabel[] {
+  if (fog.opacity <= 0) return [];
   const W = ctx.canvas.width;
   const H = ctx.canvas.height;
   // Band width: half of the cleared-centre complement, so left+right together
@@ -468,15 +696,23 @@ function drawEdgeFog(
     drawFogTexture(ctx, fog, bandX, bandW, H, time, reducedMotion, captionBand);
   }
 
-  // The family's sprite at half the point-ghost size, in the upper band (task
-  // 18.3), so the sound is identifiable without the animation.
-  const spriteX = edgeLabelX(fog.edge, W, bandW);
+  // The sprite opacity stays strong while the event is active so it always
+  // reads next to its drifting texture (task 22.4), never fading to a faint
+  // shape while the label is on.
+  const spriteOpacity = Math.max(AMBIENT_SPRITE_MIN_OPACITY, fog.opacity);
   const ambientRadius = baseRadiusFrac() * 0.5 * minDim;
-  drawAmbientSprite(ctx, fog.family, spriteX, H * 0.22, ambientRadius, fog.opacity, loader);
 
-  // Label on a dark backing plate near the edge, above the sprite in the upper
-  // part of the band — never in the caption band (Req 6.4, 6.5, 10.2).
-  drawLabel(ctx, fog.label, spriteX, H * 0.1, 1);
+  // One sprite and one label plate per painted band, so a whole-frame fog names
+  // itself on both sides (task 22.4) and the sprite sits beside the texture
+  // that carries its motion. All in the upper part of the band, clear of the
+  // caption band (Req 6.4, 6.5).
+  const labels: PendingLabel[] = [];
+  for (const e of paintedEdges) {
+    const bandCentreX = e === 'left' ? bandW / 2 : W - bandW / 2;
+    drawAmbientSprite(ctx, fog.family, bandCentreX, H * 0.22, ambientRadius, spriteOpacity, loader);
+    labels.push(measureLabel(ctx, fog.label, bandCentreX, H * 0.1, 1));
+  }
+  return labels;
 }
 
 /**
@@ -564,7 +800,10 @@ function drawFogTexture(
 /**
  * Draw an ambient event's family sprite inside its fog band at reduced size
  * (task 18.3): the PNG when loaded, else the Path2D silhouette fallback (task
- * 16.5), both at the fog's opacity. Centred at (cx, cy) in a box of side
+ * 16.5), both at `opacity`. The caller passes an opacity of at least
+ * `AMBIENT_SPRITE_MIN_OPACITY` while the event is active (task 22.4), and this
+ * draws at exactly that opacity (no extra dimming) so the sprite never fades to
+ * a faint shape while its label is on. Centred at (cx, cy) in a box of side
  * `2*radius`.
  */
 function drawAmbientSprite(
@@ -579,7 +818,7 @@ function drawAmbientSprite(
   const entry = loader.load(family);
   if (entry.loaded && entry.image) {
     ctx.save();
-    ctx.globalAlpha = clamp01(opacity) * 0.95;
+    ctx.globalAlpha = clamp01(opacity);
     const side = radius * 2;
     ctx.drawImage(entry.image, cx - radius, cy - radius, side, side);
     ctx.restore();
@@ -590,17 +829,10 @@ function drawAmbientSprite(
   ctx.save();
   ctx.translate(cx, cy);
   ctx.scale(radius, radius);
-  ctx.globalAlpha = clamp01(opacity) * 0.92;
+  ctx.globalAlpha = clamp01(opacity);
   ctx.fillStyle = `rgba(${FOG_RGB},0.95)`;
   ctx.fill(path);
   ctx.restore();
-}
-
-/** Horizontal anchor (device px) for an edge fog's label. */
-function edgeLabelX(edge: FogEdge, W: number, bandW: number): number {
-  if (edge === 'left') return bandW / 2;
-  if (edge === 'right') return W - bandW / 2;
-  return W / 2; // whole-frame fog: centre the label at the top
 }
 
 /**
@@ -638,32 +870,28 @@ function drawGhost(
 }
 
 /**
- * Draw the label on a dark backing plate so it meets WCAG AA contrast over any
- * video (Req 6.4, 10.2). The plate is sized to the measured text; text is
- * near-white on a near-opaque dark plate (contrast ratio > 12:1). `opacity`
- * fades the whole label with its ghost/fog while keeping the contrast ratio
- * (plate and text fade together).
+ * Draw a label on a dark backing plate so it meets WCAG AA contrast over any
+ * video (Req 6.4, 10.2), at the plate rectangle `placeLabels` resolved (tasks
+ * 22.1, 22.2). The plate is near-opaque dark with near-white text (contrast
+ * ratio > 12:1); `opacity` fades the whole label with its ghost/fog while
+ * keeping the contrast ratio (plate and text fade together).
  */
-function drawLabel(ctx: Ctx2D, label: string, cx: number, cy: number, opacity: number): void {
+function drawLabelAt(ctx: Ctx2D, label: string, rect: LabelRect, opacity: number): void {
   const a = clamp01(opacity);
   if (a <= 0) return;
   ctx.save();
   ctx.font = `${LABEL_FONT_PX}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  const metrics = ctx.measureText(label);
-  const textW = metrics.width;
-  const plateW = textW + LABEL_PAD_X * 2;
-  const plateH = LABEL_FONT_PX + LABEL_PAD_Y * 2;
-  const plateX = cx - plateW / 2;
-  const plateY = cy;
+  const plateX = rect.x - rect.w / 2;
+  const plateY = rect.y;
 
   ctx.globalAlpha = a;
   ctx.fillStyle = 'rgba(12,14,20,0.9)';
-  ctx.fillRect(plateX, plateY, plateW, plateH);
+  ctx.fillRect(plateX, plateY, rect.w, rect.h);
 
   ctx.fillStyle = 'rgba(240,242,248,1)';
-  ctx.fillText(label, cx, plateY + LABEL_PAD_Y);
+  ctx.fillText(label, rect.x, plateY + LABEL_PAD_Y);
   ctx.restore();
 }
 

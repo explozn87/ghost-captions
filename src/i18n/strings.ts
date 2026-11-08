@@ -122,6 +122,17 @@ export interface Strings {
     fullscreen: string;
     exitFullscreen: string;
 
+    // "Sounds the captions missed" counter (task 22.5). `{n}` is replaced with
+    // the count; `{sound}` with the newest missed sound's name.
+    /** The running counter chip, e.g. "Sounds captions miss: 7". */
+    missedCount: string;
+    /** The brief "+1 <sound>" flash when the counter rises, e.g. "+1 Gunshot". */
+    missedPlusOne: string;
+    /** The end card shown when the video finishes, e.g. "Captions would have missed 7 sounds in this clip." */
+    missedEndCard: string;
+    /** The "watch again" button on the end card. */
+    watchAgain: string;
+
     // Event list columns/labels (Requirement 7.2).
     colTime: string;
     colSound: string;

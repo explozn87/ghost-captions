@@ -55,6 +55,30 @@ a { color: var(--accent); }
   transition: opacity .3s ease; opacity: 1; }
 .player__chip--hidden { opacity: 0; }
 
+/* "Sounds the captions missed" counter (task 22.5): top-right, inside the
+   player so it shows in full screen. Text carries the meaning; the pulse is one
+   gentle scale step, never a flash, and is disabled under reduced motion. */
+.player__missed { position: absolute; top: 10px; right: 10px; z-index: 2; line-height: 1.2;
+  display: flex; align-items: center; gap: 8px; font-size: .85rem;
+  background: rgba(15,17,21,.82); border: 1px solid var(--line); color: var(--text);
+  border-radius: 999px; padding: 4px 12px; }
+/* When the fullscreen button is present it also sits top-right; nudge the
+   counter left of it so they do not overlap. */
+.player__fullscreen ~ .player__missed { right: 52px; }
+.player__missed-plus { color: var(--accent); font-weight: 600; }
+.player__missed--pulse { animation: missed-pulse .4s ease; }
+@keyframes missed-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+/* Centred end card shown when the video finishes (task 22.5). */
+.player__endcard { position: absolute; inset: 0; z-index: 3; display: grid; place-content: center;
+  gap: 14px; text-align: center; background: rgba(10,12,18,.72); padding: 24px; }
+.player__endcard-text { margin: 0; font-size: 1.15rem; max-width: 28ch; }
+.player__endcard-again { justify-self: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .player__missed--pulse { animation: none; }
+}
+
 .settings__help { color: var(--muted); font-size: .88rem; margin: 2px 0 10px; }
 
 .timeline__marks { position: relative; height: 28px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; list-style: none; margin: 0; padding: 0; }

@@ -42,6 +42,27 @@ if (typeof HTMLCanvasElement !== 'undefined') {
 }
 
 
+// jsdom has no media backend: HTMLMediaElement.prototype.play and .pause() are
+// present but throw "Not implemented: HTMLMediaElement.prototype.play" when
+// called. The Player's "Watch again" button (task 22.5) legitimately resumes
+// playback with video.play(); its return value is already guarded, but the
+// throw happens at the call itself, before any value is returned, so the guard
+// cannot help under jsdom. We install no-op stubs here so the real browser
+// behaviour (resume playback) is exercised by the click handler without jsdom's
+// missing-backend throw. play() returns a resolved Promise to match the real
+// API (the handler treats it as a thenable). This asserts nothing about actual
+// playback, which jsdom cannot do and which no test depends on.
+if (typeof HTMLMediaElement !== 'undefined') {
+  HTMLMediaElement.prototype.play = function play(
+    this: HTMLMediaElement,
+  ): Promise<void> {
+    return Promise.resolve();
+  };
+  HTMLMediaElement.prototype.pause = function pause(this: HTMLMediaElement) {
+    // no-op: nothing to pause without a media backend.
+  };
+}
+
 // The export flow creates an <a download> and calls .click() to start a local
 // download — correct browser behaviour (the `download` attribute means the
 // browser saves the blob instead of navigating). jsdom cannot follow the blob:

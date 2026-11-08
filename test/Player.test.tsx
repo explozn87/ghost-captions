@@ -18,6 +18,30 @@ const emptyTrack: EventTrack = {
   labelsAvailable: true,
 };
 
+/** A track with two non-speech sound events and one speech event. */
+const soundTrack: EventTrack = {
+  duration: 20,
+  mono: false,
+  labelsAvailable: true,
+  events: [
+    {
+      id: 'a', start: 1, end: 2, family: 'gunshot', isSpeech: false,
+      topLabel: 'Gunshot', labelScore: 0.9, side: 'left', sideTrack: [], sideConfidence: 0.8,
+      loudness: 0.9, trend: 'steady', ominous: 0.8, beatPeriod: null,
+    },
+    {
+      id: 'speech', start: 2, end: 3, family: 'scream', isSpeech: true,
+      topLabel: null, labelScore: 0, side: 'centre-unknown', sideTrack: [], sideConfidence: 0,
+      loudness: 0.5, trend: 'steady', ominous: 0.3, beatPeriod: null,
+    },
+    {
+      id: 'b', start: 4, end: 5, family: 'vehicle', isSpeech: false,
+      topLabel: 'Car', labelScore: 0.7, side: 'right', sideTrack: [], sideConfidence: 0.7,
+      loudness: 0.6, trend: 'steady', ominous: 0.3, beatPeriod: null,
+    },
+  ],
+};
+
 function settingsWith(showWhen: ShowWhen, lang: 'en' | 'ko' = 'en'): Settings {
   return { ...defaultSettings(lang, true), showWhen };
 }
@@ -114,5 +138,93 @@ describe('Player show-when chip (task 21.2, 21.4)', () => {
       screen.getByText(strings.ui.chipSoundOff).click();
     });
     expect(onOpenShowWhen).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+/** Set the video's currentTime and fire the native-style timeupdate event. */
+function setTime(video: HTMLVideoElement, seconds: number) {
+  act(() => {
+    Object.defineProperty(video, 'currentTime', { value: seconds, writable: true, configurable: true });
+    video.dispatchEvent(new Event('timeupdate'));
+  });
+}
+
+/** Fire the ended event on the video. */
+function fireEnded(video: HTMLVideoElement) {
+  act(() => {
+    Object.defineProperty(video, 'ended', { value: true, writable: true, configurable: true });
+    video.dispatchEvent(new Event('ended'));
+  });
+}
+
+describe('Player missed-sounds counter (task 22.5)', () => {
+  it('shows the running count, rising as non-speech events start, speech excluded', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    // Before anything starts: 0.
+    expect(screen.getByText('Sounds captions miss: 0')).toBeInTheDocument();
+    // After the gunshot at t=1: 1.
+    setTime(video, 1);
+    expect(screen.getByText('Sounds captions miss: 1')).toBeInTheDocument();
+    // The speech event at t=2 does not raise the count.
+    setTime(video, 2.5);
+    expect(screen.getByText('Sounds captions miss: 1')).toBeInTheDocument();
+    // After the car at t=4: 2.
+    setTime(video, 4);
+    expect(screen.getByText('Sounds captions miss: 2')).toBeInTheDocument();
+  });
+
+  it('shows a brief "+1 <sound>" flash when the count rises', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    setTime(getVideo(), 1);
+    // The newest sound uses its specific label "Gunshot".
+    expect(screen.getByText('+1 Gunshot')).toBeInTheDocument();
+  });
+
+  it('becomes the end card with the total and a Watch again button when the video ends', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    setTime(video, 10); // both non-speech events have started
+    fireEnded(video);
+    expect(screen.getByText('Captions would have missed 2 sounds in this clip.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: strings.ui.watchAgain })).toBeInTheDocument();
+    // Watch again restarts and clears the end card.
+    act(() => {
+      screen.getByRole('button', { name: strings.ui.watchAgain }).click();
+    });
+    expect(screen.queryByText('Captions would have missed 2 sounds in this clip.')).toBeNull();
+  });
+
+  it('hides the counter when the overlay is resting (auto, sound on)', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    setTime(getVideo(), 4);
+    expect(screen.getByText('Sounds captions miss: 2')).toBeInTheDocument();
+    // Unmute: overlay rests, the counter hides.
+    setVolume(getVideo(), { muted: false, volume: 1 });
+    expect(screen.queryByText('Sounds captions miss: 2')).toBeNull();
+  });
+
+  it('shows the counter text in Korean', () => {
+    const strings = t('ko');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto', 'ko')} strings={strings} />,
+    );
+    setTime(getVideo(), 4);
+    expect(screen.getByText('자막이 놓친 소리: 2')).toBeInTheDocument();
+    fireEnded(getVideo());
+    expect(screen.getByText('자막만 봤다면 이 영상에서 소리 2개를 놓쳤습니다.')).toBeInTheDocument();
   });
 });

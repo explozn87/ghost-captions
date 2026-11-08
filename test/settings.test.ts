@@ -4,8 +4,11 @@ import {
   SIZE_SCALES,
   sizeChoiceFor,
   defaultSettings,
+  missedCount,
+  latestMissedEvent,
 } from '../src/ui/settings.ts';
 import { ghostConfig } from '../src/config/ghost.config.ts';
+import type { Family, SoundEvent } from '../src/shared/types.ts';
 
 // Task 17.1: the size control offers three choices — 24% / 30% / 36% of the
 // viewport's shorter side (small / normal / large). The base ghost diameter is
@@ -38,5 +41,77 @@ describe('settings: three ghost-size choices (task 17.1)', () => {
     // An off value snaps to the nearest.
     expect(sizeChoiceFor(0.85)).toBe('small');
     expect(sizeChoiceFor(1.15)).toBe('large');
+  });
+});
+
+
+// Task 22.5: `missedCount(events, t, settings)` counts the shown non-speech
+// events up to the current time — the number of sounds ordinary captions would
+// have missed. Pure, so it gets a direct unit test; the chip and end card both
+// read it.
+
+function ev(over: Partial<SoundEvent> = {}): SoundEvent {
+  return {
+    id: 'e0',
+    start: 0,
+    end: 1,
+    family: 'footsteps',
+    isSpeech: false,
+    topLabel: null,
+    labelScore: 0,
+    side: 'centre-unknown',
+    sideTrack: [],
+    sideConfidence: 0,
+    loudness: 0.5,
+    trend: 'steady',
+    ominous: 0.3,
+    beatPeriod: null,
+    ...over,
+  };
+}
+
+const noMute = { mutedFamilies: new Set<Family>() };
+
+describe('missedCount (task 22.5)', () => {
+  const events: SoundEvent[] = [
+    ev({ id: 'a', family: 'footsteps', start: 1 }),
+    ev({ id: 'b', family: 'gunshot', start: 3 }),
+    ev({ id: 'c', family: 'wind', start: 5 }),
+    ev({ id: 'speech', family: 'scream', start: 2, isSpeech: true }),
+  ];
+
+  it('counts non-speech events whose start is at or before the time', () => {
+    expect(missedCount(events, 0, noMute)).toBe(0);
+    expect(missedCount(events, 1, noMute)).toBe(1); // footsteps started
+    expect(missedCount(events, 3, noMute)).toBe(2); // + gunshot
+    expect(missedCount(events, 10, noMute)).toBe(3); // + wind (speech excluded)
+  });
+
+  it('excludes speech events entirely', () => {
+    // At t=2 only footsteps (t1) counts; the speech event at t2 does not.
+    expect(missedCount(events, 2, noMute)).toBe(1);
+  });
+
+  it('excludes families the viewer has hidden', () => {
+    const muted = { mutedFamilies: new Set<Family>(['gunshot']) };
+    expect(missedCount(events, 10, muted)).toBe(2); // footsteps + wind, gunshot hidden
+  });
+});
+
+describe('latestMissedEvent (task 22.5)', () => {
+  const events: SoundEvent[] = [
+    ev({ id: 'a', family: 'footsteps', start: 1 }),
+    ev({ id: 'b', family: 'gunshot', start: 3 }),
+  ];
+
+  it('returns the most recent shown non-speech event at or before the time', () => {
+    expect(latestMissedEvent(events, 0, noMute)).toBeNull();
+    expect(latestMissedEvent(events, 1, noMute)!.id).toBe('a');
+    expect(latestMissedEvent(events, 4, noMute)!.id).toBe('b');
+  });
+
+  it('skips hidden families when choosing the newest', () => {
+    const muted = { mutedFamilies: new Set<Family>(['gunshot']) };
+    expect(latestMissedEvent(events, 4, muted)!.id).toBe('a');
   });
 });
