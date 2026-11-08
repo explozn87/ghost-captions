@@ -2,12 +2,14 @@
 //
 // A <video> plays the local clip; a <canvas> sits exactly over it and draws the
 // ghosts for the events active at the video's current time. The overlay is
-// driven by `requestVideoFrameCallback` where the browser provides it (the
-// most accurate "a new video frame is on screen" signal), falling back to
-// `requestAnimationFrame`. Because we read `video.currentTime` every tick, the
-// overlay stays in sync through seeking, pausing and rate changes (Req 6.1):
-// paused still ticks via rAF so a seek while paused repaints, and the time read
-// reflects whatever rate the video is playing at.
+// driven by `requestAnimationFrame` ALWAYS — paused or playing (task 30.1) —
+// reading `video.currentTime` on every tick, so it stays in sync through
+// seeking, pausing and rate changes (Req 6.1) at the display frame rate.
+// `requestVideoFrameCallback`, where the browser provides it, is kept only as
+// an optional EXTRA trigger: browsers throttle it (the review browser saw it
+// fire once per second on a 24 fps clip), so it must never drive the loop on
+// its own, or the overlay lags a full second behind and opens a Compare on the
+// wrong ghost.
 //
 // The drawing itself is the pure `layout()` → `draw()` pair from task 8, so the
 // Player holds no positioning logic; it only wires time, size and settings to
@@ -420,27 +422,46 @@ export function Player({
       }
     };
 
+    // The overlay is driven by `requestAnimationFrame` ALWAYS — paused or
+    // playing (task 30.1). `requestVideoFrameCallback`, where available, fires
+    // only when a new decoded video frame is presented, and browsers throttle
+    // it hard (occluded windows, power saving): the review browser saw it fire
+    // only once per second while the Sintel demo played at 24 fps, so the
+    // overlay content changed only once per second and lagged a full second
+    // behind a seek. rAF, by contrast, runs every display frame. Each tick
+    // reads `video.currentTime`, so the overlay stays in sync through play,
+    // pause, seek and rate change. rVFC is kept only as an OPTIONAL extra
+    // trigger: when it does fire we redraw for the current time as well, which
+    // costs nothing and gives an extra-crisp repaint on the exact frame, but it
+    // never drives the loop on its own.
     const tick = () => {
       if (stopped) return;
       renderAt(video.currentTime);
-      // A paused video presents no new frames, so requestVideoFrameCallback
-      // would never fire and a mute/unmute fade (task 21.1) would freeze.
-      // Fall back to rAF while paused; playback switches back on the next tick.
-      if (rvfc.requestVideoFrameCallback && !video.paused) {
-        rvfcHandle = rvfc.requestVideoFrameCallback(() => tick());
-      } else {
-        rafHandle = requestAnimationFrame(tick);
+      rafHandle = requestAnimationFrame(tick);
+    };
+
+    const onVideoFrame = () => {
+      if (stopped) return;
+      renderAt(video.currentTime);
+      // Re-register the extra trigger; it is purely supplementary to the rAF
+      // loop above, so throttling or it never firing changes nothing.
+      if (rvfc.requestVideoFrameCallback) {
+        rvfcHandle = rvfc.requestVideoFrameCallback(onVideoFrame);
       }
     };
 
-    // Expose an immediate redraw so a `seeked`/`play`-after-seek can repaint
-    // for the new time at once (task 29.1), not on the next frame callback.
+    // Expose an immediate redraw so a `seeked`/`play`-after-seek (task 29.1)
+    // and the Compare step (task 30.1) can repaint for the new time at once,
+    // not on the next frame callback.
     renderNowRef.current = (time: number) => {
       if (stopped) return;
       renderAt(time);
     };
 
     tick();
+    if (rvfc.requestVideoFrameCallback) {
+      rvfcHandle = rvfc.requestVideoFrameCallback(onVideoFrame);
+    }
 
     return () => {
       stopped = true;
@@ -677,13 +698,23 @@ export function Player({
       // second pass. Seeking only when the drift is large avoids fighting normal
       // playback.
       const want = comparePlaybackTime(elapsed, run.plan);
-      if (Math.abs(v.currentTime - want) > 0.4) v.currentTime = want;
+      if (Math.abs(v.currentTime - want) > 0.4) {
+        v.currentTime = want;
+        // Redraw for the sought time at once (task 30.1): do not wait for
+        // `seeked`, which may not fire promptly during a programmatic seek, so
+        // the second pass ("With Ghost Captions") always opens on the right
+        // ghost rather than the pre-seek one.
+        renderNowRef.current?.(want);
+      }
       const played = v.play() as Promise<void> | undefined;
       if (played && typeof played.catch === 'function') played.catch(() => {});
       compareTick.current = requestAnimationFrame(step);
     };
     // Seek to the window start and begin.
     video.currentTime = plan.from;
+    // Redraw for the window start at once (task 30.1) so the captions-only
+    // pass opens on the right frame, not the end-card's last state.
+    renderNowRef.current?.(plan.from);
     compareTick.current = requestAnimationFrame(step);
   };
   // Stop any compare run when the player unmounts.

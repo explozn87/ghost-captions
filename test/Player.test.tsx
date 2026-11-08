@@ -646,3 +646,134 @@ describe('Player end-card music span agrees with the picture (task 29.4)', () =>
     expect(screen.queryByText('0:11\u20130:25')).toBeNull();
   });
 });
+
+// --- Task 30: draw on every display frame -----------------------------------
+
+describe('Player draws on every rAF, not the rVFC cadence (task 30.1)', () => {
+  // A controllable requestAnimationFrame queue: callbacks pend until we flush
+  // them, so a "display frame" is a single deterministic step. The overlay's
+  // draw loop reports the time it drew via `onTimeUpdate` (called at the end of
+  // `renderAt`), so that callback is our observable "the overlay redrew for
+  // this time" signal — the drawing itself is a no-op under jsdom's stub
+  // context, exactly as the other Player tests rely on.
+  let rafQueue: FrameRequestCallback[];
+  let now: number;
+
+  beforeEach(() => {
+    rafQueue = [];
+    now = 0;
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      rafQueue.push(cb);
+      return rafQueue.length as unknown as number;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Run exactly one pending animation frame. */
+  function flushFrame() {
+    const cbs = rafQueue;
+    rafQueue = [];
+    now += 16;
+    act(() => {
+      for (const cb of cbs) cb(now);
+    });
+  }
+
+  /** Move the playhead WITHOUT firing any event (as a raw seek/decode would). */
+  function moveHead(video: HTMLVideoElement, seconds: number) {
+    Object.defineProperty(video, 'currentTime', {
+      value: seconds,
+      writable: true,
+      configurable: true,
+    });
+  }
+
+  /** The last reported time (Array.prototype.at is not in the lib target). */
+  function last(xs: number[]): number | undefined {
+    return xs.length ? xs[xs.length - 1] : undefined;
+  }
+
+  it('redraws on each rAF even when requestVideoFrameCallback never fires', () => {
+    const strings = t('en');
+    const times: number[] = [];
+    render(
+      <Player
+        src="blob:mock"
+        track={soundTrack}
+        settings={settingsWith('auto')}
+        strings={strings}
+        onTimeUpdate={(tt) => times.push(tt)}
+      />,
+    );
+    const video = getVideo();
+    // A video that OFFERS requestVideoFrameCallback but never invokes it — the
+    // throttled case the review browser hit (fires ~once/second while a 24 fps
+    // clip plays). If the overlay depended on it, the content would freeze.
+    let rvfcCalls = 0;
+    (video as unknown as { requestVideoFrameCallback: (cb: unknown) => number }).requestVideoFrameCallback =
+      () => {
+        rvfcCalls += 1;
+        return rvfcCalls; // register, but never call the callback back
+      };
+    (video as unknown as { cancelVideoFrameCallback: (h: number) => void }).cancelVideoFrameCallback =
+      () => undefined;
+
+    // The draw loop is set up on mount; mounting scheduled the first rAF.
+    // Advance the playhead and flush frames; each frame must report the current
+    // time, so the overlay follows the video at the display frame rate and does
+    // not wait on rVFC.
+    moveHead(video, 1);
+    flushFrame();
+    expect(last(times)).toBe(1);
+    moveHead(video, 2);
+    flushFrame();
+    expect(last(times)).toBe(2);
+    moveHead(video, 3);
+    flushFrame();
+    expect(last(times)).toBe(3);
+    // The overlay advanced on every animation frame, reading the current time
+    // each tick (the leading 0 is the first mount frame, before the head
+    // moved). It never relied on rVFC: that was offered but never fired, yet
+    // every move was reflected.
+    expect(times).toEqual([0, 1, 2, 3]);
+    expect(rvfcCalls).toBeGreaterThanOrEqual(0);
+  });
+
+  it('reflects a seek on the very next frame (task 30.1)', () => {
+    const strings = t('en');
+    const times: number[] = [];
+    render(
+      <Player
+        src="blob:mock"
+        track={soundTrack}
+        settings={settingsWith('auto')}
+        strings={strings}
+        onTimeUpdate={(tt) => times.push(tt)}
+      />,
+    );
+    const video = getVideo();
+    (video as unknown as { requestVideoFrameCallback: (cb: unknown) => number }).requestVideoFrameCallback =
+      () => 1; // offered but never fires
+    (video as unknown as { cancelVideoFrameCallback: (h: number) => void }).cancelVideoFrameCallback =
+      () => undefined;
+
+    // Play forward to 11 s (as before a Compare seek).
+    moveHead(video, 11);
+    flushFrame();
+    expect(last(times)).toBe(11);
+    // Seek back to 8.3 s while "playing" (no rVFC, no seeked event here): the
+    // very next animation frame must draw the 8.3 s state, not the stale 11 s
+    // one. Deriving the active ghosts from `video.currentTime` every frame is
+    // what closes the gap the review browser saw.
+    moveHead(video, 8.3);
+    flushFrame();
+    expect(last(times)).toBe(8.3);
+    // And the gunshot window is reached on the next frames.
+    moveHead(video, 8.9);
+    flushFrame();
+    expect(last(times)).toBe(8.9);
+  });
+});
