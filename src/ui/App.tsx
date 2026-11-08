@@ -32,6 +32,7 @@ import { defaultSettings, currentEventIndex, type Settings } from './settings.ts
 import { DropZone } from './DropZone.tsx';
 import { DemoPicker } from './DemoPicker.tsx';
 import type { DemoClip } from './demoClips.ts';
+import { loadDemoSubtitles } from './demoClips.ts';
 import { Progress } from './Progress.tsx';
 import { Player } from './Player.tsx';
 import { Timeline } from './Timeline.tsx';
@@ -172,7 +173,22 @@ export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Ele
           <DemoPicker
             strings={strings}
             onFile={(file, clip) => {
-              void onFile(file, clip);
+              void (async () => {
+                // A demo clip may bundle its own subtitle track (task 35.1):
+                // fetch it (the app's own same-origin asset, Req 1.5) and load
+                // it as the dialogue track, the same path a user-dropped
+                // subtitle takes. A missing/failed subtitle never blocks the
+                // video — the ghosts still play.
+                let subtitleFile: File | null = null;
+                if (clip.subtitles) {
+                  try {
+                    subtitleFile = await loadDemoSubtitles(clip);
+                  } catch {
+                    subtitleFile = null;
+                  }
+                }
+                await onFile(file, clip, subtitleFile);
+              })();
             }}
           />
         </DropZone>
@@ -251,8 +267,14 @@ function WatchScreen({
     <div className="watch">
       {credit && (
         <p className="notice notice--credit" role="note">
-          <strong>{credit.title}</strong> {strings.ui.demoBy} {credit.author} —{' '}
-          {strings.ui.demoLicencePrefix} {strings.licence[credit.licence]}
+          {credit.attribution ? (
+            credit.attribution
+          ) : (
+            <>
+              <strong>{credit.title}</strong> {strings.ui.demoBy} {credit.author} —{' '}
+              {strings.ui.demoLicencePrefix} {strings.licence[credit.licence]}
+            </>
+          )}
         </p>
       )}
       {track.mono && (

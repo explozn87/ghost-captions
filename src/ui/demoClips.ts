@@ -52,6 +52,22 @@ export interface DemoClip {
    * no `endAt`.
    */
   endAt?: number;
+  /**
+   * Optional subtitle track served under `public/` (task 35.1): when the clip
+   * is picked the player loads this `.vtt`/`.srt` automatically as the dialogue
+   * track, exactly as a user-loaded subtitle file would be (task 19). It is the
+   * clip's own same-origin asset, so fetching it is allowed by Req 1.5 and is
+   * not a third-party request (Req 1.4). User files have no bundled subtitles.
+   */
+  subtitles?: string;
+  /**
+   * Optional full attribution line shown above the player while the clip plays
+   * (task 35.2). For a CC BY work this is where the licence's attribution and
+   * "state the changes" terms are satisfied verbatim (CC BY 3.0 §4(b)). It is
+   * the clip's own legal text, not a translatable UI string, so it lives on the
+   * clip. When absent the player shows the shorter title/author/licence line.
+   */
+  attribution?: string;
 }
 
 /**
@@ -67,6 +83,24 @@ export interface DemoClip {
  * clip is redistributable and well-formed without rendering anything.
  */
 export const DEMO_CLIPS: readonly DemoClip[] = [
+  {
+    id: 'tears-of-steel-0658',
+    title: 'Tears of Steel (00:06:58–00:07:23 excerpt, with official subtitles)',
+    author: 'Blender Foundation',
+    licence: 'CC-BY-3',
+    sourceUrl: 'https://mango.blender.org/',
+    src: '/demo/tos-0658.webm',
+    mime: 'video/webm',
+    note: 'Dialogue the captions read, plus the sounds between the lines the ghosts read.',
+    // This clip shows the core idea best — official dialogue subtitles alongside
+    // the ghosts — so it goes first in the picker (task 35.1). The 25 s excerpt
+    // is the whole file, so it carries no endAt.
+    subtitles: '/demo/tos-0658.en.vtt',
+    // CC BY 3.0 §4(b): attribution plus a statement of the changes made
+    // (task 35.2). No wording that implies Blender endorses the app.
+    attribution:
+      'Tears of Steel (2012) — (CC) Blender Foundation | mango.blender.org — CC BY 3.0. Excerpt 00:06:58\u201300:07:23; subtitles re-timed and converted; Ghost Captions overlay added.',
+  },
   {
     id: 'sintel-trailer',
     title: 'Sintel (trailer, first 25 s only)',
@@ -128,4 +162,30 @@ export async function loadDemoFile(
   const blob = await res.blob();
   const ext = clip.src.slice(clip.src.lastIndexOf('/') + 1);
   return new File([blob], ext, { type: clip.mime });
+}
+
+/**
+ * Fetch a demo clip's bundled subtitle track (task 35.1), if it declares one,
+ * and turn it into a `File` so it flows through the same dialogue path as a
+ * user-loaded `.srt`/`.vtt` (task 19). Returns null when the clip has no
+ * `subtitles` field.
+ *
+ * Like `loadDemoFile`, this reads only the app's own same-origin asset under
+ * `/demo/` (Req 1.5). A failed fetch throws so the caller can decide whether to
+ * carry on without dialogue rather than silently playing a video with no words.
+ */
+export async function loadDemoSubtitles(
+  clip: DemoClip,
+  fetchImpl: typeof fetch = fetch,
+): Promise<File | null> {
+  if (!clip.subtitles) return null;
+  const res = await fetchImpl(clip.subtitles);
+  if (!res.ok) {
+    throw new Error(
+      `Demo subtitles not found: ${clip.subtitles} (HTTP ${res.status})`,
+    );
+  }
+  const blob = await res.blob();
+  const name = clip.subtitles.slice(clip.subtitles.lastIndexOf('/') + 1);
+  return new File([blob], name, { type: 'text/vtt' });
 }
