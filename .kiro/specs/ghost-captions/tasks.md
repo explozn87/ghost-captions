@@ -2,12 +2,12 @@
 
 Order: scaffold → types & config → synthetic signals → pure measurement → events → export → overlay layout → classifier adapter → UI wiring → demo clips → hooks → browser check → deploy → README. Every pure module lands with property tests before UI uses it. The app shell is wired early (task 9) so the real screen is never a placeholder.
 
-- [ ] 1. Project scaffold
-  - [ ] 1.1 Vite + React + TypeScript (strict, `exactOptionalPropertyTypes`), folders `src/{shared,audio,classify,measure,events,config,overlay,export,i18n,ui}`, `test/`.
+- [x] 1. Project scaffold
+  - [x] 1.1 Vite + React + TypeScript (strict, `exactOptionalPropertyTypes`), folders `src/{shared,audio,classify,measure,events,config,overlay,export,i18n,ui}`, `test/`.
     - _Requirements: NFR-3, NFR-5_
-  - [ ] 1.2 Vitest + jsdom + fast-check, `test` and `typecheck` scripts, smoke test.
+  - [x] 1.2 Vitest + jsdom + fast-check, `test` and `typecheck` scripts, smoke test.
     - _Requirements: NFR-7_
-  - [ ] 1.3 MIT `LICENSE`, `.gitignore` (not ignoring `/.kiro`), `wrangler.toml` for static Pages.
+  - [x] 1.3 MIT `LICENSE`, `.gitignore` (not ignoring `/.kiro`), `wrangler.toml` for static Pages.
     - _Requirements: NFR-3, NFR-4_
 
 - [ ] 2. Types and configuration
