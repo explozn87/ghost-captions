@@ -117,6 +117,9 @@ export const en: Strings = {
     missedCount: 'Sounds captions miss: {n}',
     missedPlusOne: '+1 {sound}',
     missedEndCard: 'Captions would have missed {n} sounds in this clip.',
+    missedBasisDialogueOnly: 'Counted against dialogue-only captions.',
+    missedBasisWithFile: 'Counted against the subtitles you loaded.',
+    missedListHeading: 'Sounds counted',
     watchAgain: 'Watch again',
 
     colTime: 'Time',

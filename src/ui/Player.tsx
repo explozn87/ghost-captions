@@ -19,7 +19,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { DialogueCue, EventTrack } from '../shared/types.ts';
 import { activeEvents } from '../events/buildEvents.ts';
 import { layout, edgeFogs, fogDecayDuration } from '../overlay/layout.ts';
-import { draw, preloadSpriteImages, measureDialogueBandFrac } from '../overlay/draw.ts';
+import { draw, preloadSpriteImages, measureDialogueBandFrac, spriteImageUrl } from '../overlay/draw.ts';
 import { activeDialogueCue } from '../subtitles/parse.ts';
 import { ghostConfig } from '../config/ghost.config.ts';
 import type { Strings } from '../i18n/index.ts';
@@ -33,7 +33,10 @@ import {
   chipStateFor,
   missedCount,
   latestMissedEvent,
+  formatClock,
 } from './settings.ts';
+import { missedOccurrences, missedBasis } from '../events/occurrences.ts';
+import { occurrenceNoun } from '../i18n/soundLabel.ts';
 
 export interface PlayerProps {
   /** Object URL for the local media; created and revoked by the parent. */
@@ -334,13 +337,25 @@ export function Player({
   // chip and the end card read it. The counter and card follow the show-when
   // overlay visibility (task 21): when the sound overlay is resting they hide.
   const overlayVisible = overlayShouldShow(settings.showWhen, silent);
-  const missed = missedCount(track.events, videoTime, settings);
+  const dialogueCues = dialogue ?? [];
+  const missed = missedCount(track.events, videoTime, settings, dialogueCues);
   // The newest missed sound's name, for the brief "+1 <sound>" flash.
-  const newest = latestMissedEvent(track.events, videoTime, settings);
+  const newest = latestMissedEvent(track.events, videoTime, settings, dialogueCues);
   const newestNoun = newest ? soundNoun(newest, strings, settings.lang) : '';
   const missedText = strings.ui.missedCount.replace('{n}', String(missed));
   const plusOneText = strings.ui.missedPlusOne.replace('{sound}', newestNoun);
   const endCardText = strings.ui.missedEndCard.replace('{n}', String(missed));
+  // The basis line under the end-card number (task 23.2): dialogue-only or
+  // against the loaded subtitle file.
+  const basisText =
+    missedBasis(dialogueCues) === 'withFile'
+      ? strings.ui.missedBasisWithFile
+      : strings.ui.missedBasisDialogueOnly;
+  // The evidence list on the end card (task 23.3): every counted occurrence in
+  // the clip, one row each with its time, family sprite and label. Computed at
+  // the clip's full duration so the card lists all counted sounds, not only
+  // those before the pause point.
+  const evidence = missedOccurrences(track.events, track.duration, settings, dialogueCues);
 
   // When the count rises, show "+1 <sound>" briefly and give the chip one
   // gentle scale pulse (none under reduced motion) (task 22.5). A reset to a
@@ -370,6 +385,17 @@ export function Player({
     // `play()` returns a Promise in browsers but may return undefined in some
     // environments (e.g. jsdom); guard the `.catch` so autoplay rejection never
     // throws.
+    const played = video.play() as Promise<void> | undefined;
+    if (played && typeof played.catch === 'function') played.catch(() => {});
+  };
+
+  // Seek to 0.5 s before an occurrence and play (task 23.3): clicking or
+  // pressing Enter on an evidence row brings the viewer to that sound.
+  const seekToOccurrence = (start: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    setEnded(false);
+    video.currentTime = Math.max(0, start - 0.5);
     const played = video.play() as Promise<void> | undefined;
     if (played && typeof played.catch === 'function') played.catch(() => {});
   };
@@ -435,6 +461,37 @@ export function Player({
       {overlayVisible && ended && (
         <div className="player__endcard" role="status" aria-live="polite">
           <p className="player__endcard-text">{endCardText}</p>
+          <p className="player__endcard-basis">{basisText}</p>
+          {evidence.length > 0 && (
+            <>
+              <h3 className="player__endcard-heading">{strings.ui.missedListHeading}</h3>
+              <ul className="player__endcard-list">
+                {evidence.map((occ) => {
+                  const label = occurrenceNoun(occ, strings, settings.lang);
+                  return (
+                    <li key={`${occ.group}-${occ.start}`}>
+                      <button
+                        type="button"
+                        className="player__endcard-row"
+                        onClick={() => seekToOccurrence(occ.start)}
+                      >
+                        <span className="player__endcard-time">{formatClock(occ.start)}</span>
+                        <img
+                          className="player__endcard-sprite"
+                          src={spriteImageUrl(occ.family)}
+                          alt=""
+                          aria-hidden="true"
+                          width={20}
+                          height={20}
+                        />
+                        <span className="player__endcard-label">{label}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
           <button type="button" className="player__endcard-again" onClick={watchAgain}>
             {strings.ui.watchAgain}
           </button>

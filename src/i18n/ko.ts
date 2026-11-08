@@ -116,6 +116,9 @@ export const ko: Strings = {
     missedCount: '자막이 놓친 소리: {n}',
     missedPlusOne: '+1 {sound}',
     missedEndCard: '자막만 봤다면 이 영상에서 소리 {n}개를 놓쳤습니다.',
+    missedBasisDialogueOnly: '대사 자막 기준으로 셌습니다.',
+    missedBasisWithFile: '불러온 자막과 대조했습니다.',
+    missedListHeading: '센 소리',
     watchAgain: '다시 보기',
 
     colTime: '시간',

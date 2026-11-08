@@ -166,6 +166,35 @@ const HOVER_SWAY_X = 0.03;
 const HOVER_SWAY_HZ = 0.2;
 
 /**
+ * Arrival scale-pop applied to EVERY point ghost at the start of its occurrence
+ * (task 23.5): the scale swells to `arrivalPopScale`× over the first
+ * `arrivalPopSec` seconds then eases back. A single rise-and-fall, never a
+ * repeating flash (Req 10.3); dropped under reduced motion (the Player bolds
+ * the label instead). Returns a multiplier ≥ 1. Because grouped same-family
+ * events touch, using the event's own start means only the true arrival pops;
+ * a hover/edge ghost that is one event per occurrence pops once.
+ */
+function arrivalPop(event: SoundEvent, t: number, reducedMotion: boolean, cfg: GhostConfig): number {
+  if (reducedMotion) return 1;
+  const since = t - event.start;
+  const dur = cfg.arrivalPopSec.value;
+  if (since < 0 || since > dur || dur <= 0) return 1;
+  // Ease: peak at the start, decay to 1 by the end of the window.
+  const pulse = Math.sin((1 - since / dur) * (Math.PI / 2));
+  return 1 + (cfg.arrivalPopScale.value - 1) * pulse;
+}
+
+/**
+ * Whether an event is within its arrival window (task 23.5), regardless of
+ * reduced motion. Under reduced motion `draw` bolds the label during this
+ * window instead of scaling the sprite.
+ */
+function isArriving(event: SoundEvent, t: number, cfg: GhostConfig): boolean {
+  const since = t - event.start;
+  return since >= 0 && since <= cfg.arrivalPopSec.value;
+}
+
+/**
  * Hard cap on tremble frequency (Hz). WCAG 2.3.1 forbids more than three
  * flashes per second; we cap at 2.5 Hz so even with the draw-time phase there
  * is margin below three (Req 10.3).
@@ -425,6 +454,7 @@ export function layout(
     const scale =
       scaleFor(event, t, settings.reducedMotion, cfg) *
       edgePop(event, t, settings.reducedMotion, cfg) *
+      arrivalPop(event, t, settings.reducedMotion, cfg) *
       settings.sizeScale *
       markerFactor;
 
@@ -477,17 +507,23 @@ export function layout(
       trembleHz,
       opacity: clamp01(edgeOpacity * faceDim),
       label: spriteLabel(event, s, settings.lang),
+      arriving: isArriving(event, t, cfg),
     });
   });
 
   return sprites;
 }
 
-/** Which edge an ambient event covers: its side, or whole-frame when unknown. */
+/**
+ * Which edge an ambient event covers (task 23.4): its measured side when known
+ * (`left`/`right`), else the top band (`top`). An ambient sound with no known
+ * side no longer paints both side bands with two copies of its sprite — it uses
+ * a single top-edge band, so a left/right band always means a measured side.
+ */
 function fogEdgeFor(side: Side): FogEdge {
   if (side === 'left') return 'left';
   if (side === 'right') return 'right';
-  return 'all';
+  return 'top';
 }
 
 /**
@@ -548,13 +584,46 @@ export function fogDecayDuration(cfg: GhostConfig = ghostConfig): number {
 }
 
 /**
+ * Whether an ambient event has been steady long enough to settle (task 23.5):
+ * active for more than `settleAfterSec` with no recent loudness rise. We model
+ * "no recent rise" simply from the trend — a `rising` event has not settled,
+ * everything else settles once it has run past the settle time. Pure: it reads
+ * only the event timing and the config. Never settled under reduced motion is
+ * not needed — the fade is an opacity change, kept under reduced motion as a
+ * static level (the sprite and label stay, Req 6.6).
+ */
+function fogSettledAt(event: SoundEvent, t: number, cfg: GhostConfig): boolean {
+  if (t < event.start + cfg.settleAfterSec.value) return false;
+  if (t >= event.end) return false;
+  return event.trend !== 'rising';
+}
+
+/**
+ * The band-sprite scale for an ambient event at time `t` (task 23.5): the
+ * arrival pop just after the occurrence starts, then 1. Shares
+ * {@link arrivalPop}'s shape so point and ambient arrivals feel the same.
+ */
+function fogSpriteScaleAt(event: SoundEvent, t: number, reducedMotion: boolean, cfg: GhostConfig): number {
+  return arrivalPop(event, t, reducedMotion, cfg);
+}
+
+/**
  * Lay out the edge-fog vignettes for the AMBIENT events near time `t` (task
- * 16.3). Pass every event whose fog could still be visible: an event that is
- * active, or ended within `fogDecayDuration` (so its slow decay still shows).
- * Speech is skipped; muted ambient families are omitted (Req 6.7). Each
- * ambient event yields one `EdgeFog` with its edge, smoothed opacity and label;
- * zero-opacity fogs are dropped. The central 60% of the frame is never covered
- * (enforced by `draw`, per `FOG_CLEAR_CENTRE`).
+ * 16.3, extended in tasks 18.x, 23.4, 23.5). Pass every event whose fog could
+ * still be visible: an event that is active, or ended within
+ * `fogDecayDuration` (so its slow decay still shows). Speech is skipped; muted
+ * ambient families are omitted (Req 6.7). Each ambient event yields one
+ * `EdgeFog` with its edge, smoothed opacity and label; zero-opacity fogs are
+ * dropped.
+ *
+ * Task 23.4: a `top` fog (no measured side) is placed in a shared top band.
+ * This function assigns each `top` fog a `topSlot`/`topCount` so `draw` can lay
+ * several of them side by side in the band, never on top of each other. A
+ * `left`/`right` fog keeps its side band.
+ *
+ * Task 23.5: each fog carries a `spriteScale` (arrival pop) and a `settled`
+ * flag so `draw` can pop the band sprite on arrival and fade/thin the band once
+ * the ambient sound has been steady.
  */
 export function edgeFogs(
   events: readonly SoundEvent[],
@@ -563,24 +632,46 @@ export function edgeFogs(
   cfg: GhostConfig = ghostConfig,
 ): EdgeFog[] {
   const s = tables[settings.lang] ?? tables.en;
-  const fogs: EdgeFog[] = [];
+  const raw: EdgeFog[] = [];
   for (const event of events) {
     if (event.isSpeech) continue;
     if (!isAmbientFamily(event.family, cfg)) continue;
     if (settings.mutedFamilies.has(event.family)) continue;
     const opacity = fogOpacityAt(event, t, settings.reducedMotion, cfg);
     if (opacity <= 0) continue;
+    const settled = fogSettledAt(event, t, cfg);
     // Texture density tracks loudness/ominousness so a louder, more ominous
-    // ambient sound has a denser band texture (task 18.2).
-    const textureDensity = clamp01(0.5 * event.loudness + 0.5 * event.ominous);
-    fogs.push({
+    // ambient sound has a denser band texture (task 18.2); a settled band
+    // thins its texture (task 23.5).
+    let textureDensity = clamp01(0.5 * event.loudness + 0.5 * event.ominous);
+    let fogOpacity = opacity;
+    if (settled) {
+      textureDensity *= cfg.settleTextureFactor.value;
+      fogOpacity *= cfg.settleOpacityFactor.value;
+    }
+    raw.push({
       family: event.family,
       edge: fogEdgeFor(event.side),
-      opacity,
+      opacity: fogOpacity,
       label: spriteLabel(event, s, settings.lang),
       texture: ambientTextureOf(event.family, cfg) as FogTexture,
       textureDensity,
+      spriteScale: fogSpriteScaleAt(event, t, settings.reducedMotion, cfg),
+      settled,
+      // Filled in below once we know how many top fogs there are.
+      topSlot: 0,
+      topCount: 1,
+      arriving: isArriving(event, t, cfg),
     });
   }
-  return fogs;
+
+  // Assign side-by-side slots to the top-band fogs (task 23.4), in a stable
+  // order, so several active ambient sounds without a side never stack on top
+  // of each other. Side fogs keep slot 0 of a single-slot band.
+  const topFogs = raw.filter((f) => f.edge === 'top');
+  topFogs.forEach((f, i) => {
+    f.topSlot = i;
+    f.topCount = topFogs.length;
+  });
+  return raw;
 }

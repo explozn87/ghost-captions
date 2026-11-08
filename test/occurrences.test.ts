@@ -1,0 +1,200 @@
+import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
+import {
+  occurrences,
+  groupKey,
+  cueDescribesSound,
+  occurrenceIsMissed,
+  missedOccurrences,
+  missedBasis,
+  isShownEvent,
+} from '../src/events/occurrences.ts';
+import type { DialogueCue, Family, SoundEvent } from '../src/shared/types.ts';
+
+// Task 23.1/23.2: group shown events into sound OCCURRENCES and count them
+// honestly against the loaded subtitles. These are pure functions, so every
+// rule is covered directly and by property.
+
+function ev(over: Partial<SoundEvent> = {}): SoundEvent {
+  return {
+    id: 'e',
+    start: 0,
+    end: 1,
+    family: 'gunshot',
+    isSpeech: false,
+    topLabel: null,
+    labelScore: 0,
+    side: 'centre-unknown',
+    sideTrack: [],
+    sideConfidence: 0,
+    loudness: 0.5,
+    trend: 'steady',
+    ominous: 0.5,
+    beatPeriod: null,
+    ...over,
+  };
+}
+
+const noMute = { mutedFamilies: new Set<Family>() };
+
+describe('occurrences: group key (task 23.1)', () => {
+  it('folds all music families into one "music" group', () => {
+    expect(groupKey('tenseMusic')).toBe('music');
+    expect(groupKey('calmMusic')).toBe('music');
+    expect(groupKey('singing')).toBe('music');
+  });
+
+  it('every non-music family is its own group', () => {
+    expect(groupKey('gunshot')).toBe('gunshot');
+    expect(groupKey('wind')).toBe('wind');
+    expect(groupKey('footsteps')).toBe('footsteps');
+  });
+});
+
+describe('occurrences: grouping (task 23.1)', () => {
+  it('folds touching same-family events into one occurrence', () => {
+    const events = [
+      ev({ id: 'a', family: 'calmMusic', start: 10, end: 11 }),
+      ev({ id: 'b', family: 'tenseMusic', start: 11, end: 12 }),
+      ev({ id: 'c', family: 'singing', start: 12.5, end: 14 }),
+    ];
+    const occ = occurrences(events, noMute);
+    expect(occ).toHaveLength(1);
+    expect(occ[0]!.group).toBe('music');
+    expect(occ[0]!.start).toBe(10);
+    expect(occ[0]!.end).toBe(14);
+  });
+
+  it('keeps two same-family events far apart as separate occurrences', () => {
+    const events = [
+      ev({ id: 'a', family: 'gunshot', start: 0, end: 1 }),
+      ev({ id: 'b', family: 'gunshot', start: 10, end: 11 }),
+    ];
+    expect(occurrences(events, noMute)).toHaveLength(2);
+  });
+
+  it('a trend change inside an occurrence updates its label but does not split it', () => {
+    // One sound the pipeline split on a loudness-trend change into touching
+    // pieces; the louder piece names the occurrence.
+    const events = [
+      ev({ id: 'a', family: 'calmMusic', start: 10, end: 12, loudness: 0.4, trend: 'rising', topLabel: 'Music', labelScore: 0.6 }),
+      ev({ id: 'b', family: 'calmMusic', start: 12, end: 14, loudness: 0.8, trend: 'falling', topLabel: 'Orchestra', labelScore: 0.9 }),
+    ];
+    const occ = occurrences(events, noMute);
+    expect(occ).toHaveLength(1);
+    // The louder piece names it (one label per occurrence).
+    expect(occ[0]!.topLabel).toBe('Orchestra');
+    expect(occ[0]!.trend).toBe('falling');
+  });
+
+  it('speech and muted families are not shown', () => {
+    expect(isShownEvent(ev({ isSpeech: true }), new Set())).toBe(false);
+    expect(isShownEvent(ev({ family: 'wind' }), new Set<Family>(['wind']))).toBe(false);
+    expect(isShownEvent(ev(), new Set())).toBe(true);
+  });
+});
+
+describe('occurrences: properties (task 23.1)', () => {
+  it('splitting one event into touching pieces never changes the count', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 8 }), // number of pieces
+        fc.double({ min: 0, max: 50, noNaN: true }), // base start
+        (pieces, start) => {
+          const span = 6; // total length
+          const whole = [ev({ id: 'w', family: 'gunshot', start, end: start + span })];
+          const split: SoundEvent[] = [];
+          const step = span / pieces;
+          for (let i = 0; i < pieces; i++) {
+            split.push(
+              ev({ id: `p${i}`, family: 'gunshot', start: start + i * step, end: start + (i + 1) * step }),
+            );
+          }
+          const nWhole = occurrences(whole, noMute).length;
+          const nSplit = occurrences(split, noMute).length;
+          return nWhole === 1 && nSplit === 1;
+        },
+      ),
+    );
+  });
+
+  it('a trend change never increments the count', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom<SoundEvent['trend']>('rising', 'falling', 'steady'), { minLength: 1, maxLength: 6 }),
+        (trends) => {
+          // One occurrence split into touching pieces, each with any trend.
+          const events = trends.map((trend, i) =>
+            ev({ id: `t${i}`, family: 'calmMusic', start: i, end: i + 1, trend }),
+          );
+          return occurrences(events, noMute).length === 1;
+        },
+      ),
+    );
+  });
+});
+
+describe('occurrences: honest definition of missed (task 23.2)', () => {
+  it('a bracketed or music cue describes a sound; a plain spoken cue does not', () => {
+    expect(cueDescribesSound({ start: 0, end: 1, text: '[door creaks]' })).toBe(true);
+    expect(cueDescribesSound({ start: 0, end: 1, text: '(gunshot)' })).toBe(true);
+    expect(cueDescribesSound({ start: 0, end: 1, text: '♪ la la la ♪' })).toBe(true);
+    expect(cueDescribesSound({ start: 0, end: 1, text: 'Who is there?' })).toBe(false);
+  });
+
+  it('without a subtitle file every occurrence is counted', () => {
+    const occ = occurrences([ev({ family: 'gunshot', start: 1, end: 2 })], noMute)[0]!;
+    expect(occurrenceIsMissed(occ, [])).toBe(true);
+  });
+
+  it('an occurrence is NOT counted when an overlapping cue already describes a sound', () => {
+    const occ = occurrences([ev({ family: 'gunshot', start: 5, end: 6 })], noMute)[0]!;
+    const describing: DialogueCue[] = [{ start: 5.2, end: 5.8, text: '[gunshot]' }];
+    expect(occurrenceIsMissed(occ, describing)).toBe(false);
+  });
+
+  it('an overlapping plain spoken cue does not suppress the count', () => {
+    const occ = occurrences([ev({ family: 'gunshot', start: 5, end: 6 })], noMute)[0]!;
+    const spoken: DialogueCue[] = [{ start: 5.2, end: 5.8, text: 'Run!' }];
+    expect(occurrenceIsMissed(occ, spoken)).toBe(true);
+  });
+
+  it('a describing cue that does not overlap the occurrence still counts it', () => {
+    const occ = occurrences([ev({ family: 'gunshot', start: 5, end: 6 })], noMute)[0]!;
+    const elsewhere: DialogueCue[] = [{ start: 20, end: 21, text: '[thunder]' }];
+    expect(occurrenceIsMissed(occ, elsewhere)).toBe(true);
+  });
+
+  it('missedBasis reports the basis for the end card', () => {
+    expect(missedBasis([])).toBe('dialogueOnly');
+    expect(missedBasis([{ start: 0, end: 1, text: 'hi' }])).toBe('withFile');
+  });
+});
+
+describe('occurrences: missedOccurrences up to time t (task 23.1/23.2)', () => {
+  const events = [
+    ev({ id: 'g', family: 'gunshot', start: 2, end: 3 }),
+    ev({ id: 'w', family: 'wind', start: 4, end: 9 }),
+    ev({ id: 'm1', family: 'calmMusic', start: 10, end: 12 }),
+    ev({ id: 'm2', family: 'tenseMusic', start: 12, end: 14 }),
+    ev({ id: 's', isSpeech: true, family: 'unknown', start: 1, end: 2 }),
+  ];
+
+  it('counts only occurrences whose start is at or before t', () => {
+    expect(missedOccurrences(events, 1, noMute).length).toBe(0);
+    expect(missedOccurrences(events, 2.5, noMute).length).toBe(1);
+    expect(missedOccurrences(events, 11, noMute).length).toBe(3); // gunshot, wind, music
+  });
+
+  it('music counts once, not three times (the Sintel defect)', () => {
+    const musicOnly = events.filter((e) => ['calmMusic', 'tenseMusic', 'singing'].includes(e.family));
+    expect(occurrences(musicOnly, noMute)).toHaveLength(1);
+  });
+
+  it('a loaded describing subtitle removes the matching occurrence', () => {
+    const dialogue: DialogueCue[] = [{ start: 2, end: 3, text: '[gunshot]' }];
+    expect(missedOccurrences(events, 14, noMute, dialogue).some((o) => o.group === 'gunshot')).toBe(false);
+    // The wind and music are still counted.
+    expect(missedOccurrences(events, 14, noMute, dialogue).length).toBe(2);
+  });
+});

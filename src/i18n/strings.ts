@@ -130,6 +130,12 @@ export interface Strings {
     missedPlusOne: string;
     /** The end card shown when the video finishes, e.g. "Captions would have missed 7 sounds in this clip." */
     missedEndCard: string;
+    /** The basis line under the end-card number when no subtitle file is loaded (task 23.2). */
+    missedBasisDialogueOnly: string;
+    /** The basis line under the end-card number when a subtitle file is loaded (task 23.2). */
+    missedBasisWithFile: string;
+    /** Heading above the end-card evidence list of counted occurrences (task 23.3). */
+    missedListHeading: string;
     /** The "watch again" button on the end card. */
     watchAgain: string;
 

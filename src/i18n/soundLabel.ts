@@ -59,3 +59,38 @@ export function soundNoun(
   }
   return strings.family[event.family];
 }
+
+/**
+ * The evidence-row phrase for one counted sound occurrence (task 23.3), e.g.
+ * "Gunshot, from the right". Reuses {@link soundNoun} for the noun (specific
+ * label when confident, else family word) and the shared side phrase, so the
+ * evidence list never disagrees with the ghost labels or the export. The time
+ * prefix (m:ss) is added by the caller. An occurrence is never speech or
+ * unknown here in a way that would blank the noun — its family already names
+ * the sprite.
+ */
+export function occurrenceNoun(
+  occ: {
+    family: SoundEvent['family'];
+    topLabel: string | null;
+    labelScore: number;
+    side: SoundEvent['side'];
+  },
+  strings: Strings,
+  lang: Lang,
+  cfg: GhostConfig = ghostConfig,
+): string {
+  // Reuse the event resolver by shaping a minimal SoundEvent-like object. Only
+  // the fields soundNoun reads are needed.
+  const shaped = {
+    isSpeech: false,
+    family: occ.family,
+    topLabel: occ.topLabel,
+    labelScore: occ.labelScore,
+  } as SoundEvent;
+  const noun = soundNoun(shaped, strings, lang, cfg);
+  if (occ.side === 'left' || occ.side === 'right') {
+    return `${noun}${strings.join}${strings.side[occ.side]}`;
+  }
+  return noun;
+}

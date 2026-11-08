@@ -105,6 +105,31 @@ export interface GhostConfig {
    * `auto` show-when mode (task 21.1). Dialogue subtitles are never affected.
    */
   overlayFadeSeconds: Tuned;
+  /**
+   * The gap (seconds) below which two shown events of the same group are
+   * folded into one sound occurrence (task 23.1). The counter, the "+1" flash
+   * and the end card count occurrences, not raw events, so a sound that the
+   * pipeline split into touching pieces (e.g. music whose loudness trend
+   * changed) is counted once.
+   */
+  occurrenceGapSec: Tuned;
+  /**
+   * Arrival rhythm (task 23.5): when a new occurrence starts, its ghost (point)
+   * or band sprite (ambient) is drawn at `arrivalPopScale`× size for
+   * `arrivalPopSec` seconds, then eases back. Under reduced motion there is no
+   * scaling; the label is shown in bold for the same time instead.
+   */
+  arrivalPopScale: Tuned;
+  arrivalPopSec: Tuned;
+  /**
+   * Settle rhythm (task 23.5): an ambient occurrence that has been steady for
+   * more than `settleAfterSec` fades its band to `settleOpacityFactor` of its
+   * opacity and multiplies its texture density by `settleTextureFactor`,
+   * keeping its sprite and label; it rises again only on a new loudness rise.
+   */
+  settleAfterSec: Tuned;
+  settleOpacityFactor: Tuned;
+  settleTextureFactor: Tuned;
 }
 
 /**
@@ -299,6 +324,30 @@ export const ghostConfig = {
   overlayFadeSeconds: {
     value: 0.6,
     why: 'In the default `auto` show-when mode the sound overlay fades out over 0.6 s when the viewer unmutes and fades back in over 0.6 s when they mute again (task 21.1). Long enough to read as a deliberate "the ghosts are resting because you can hear now" rather than a flicker, short enough that a judge toggling mute sees the effect at once. Dialogue subtitles ignore this and stay on in every mode.',
+  },
+  occurrenceGapSec: {
+    value: 4,
+    why: 'Shown events of the same group (all music families count as one "music" group) that overlap or sit within 4 s of each other are folded into one sound occurrence (task 23.1). The Sintel demo counted music three times and stacked two "Music" plates at 13 s because the pipeline split the long cue on loudness-trend changes; a 4 s bridge is wide enough to rejoin those touching fragments into one count while two genuinely separate sounds of the same family (e.g. two gunshots seconds apart) stay distinct.',
+  },
+  arrivalPopScale: {
+    value: 1.6,
+    why: 'A new occurrence announces itself by drawing its ghost/band sprite at 1.6× for a moment then easing back (task 23.5), so the viewer\'s eye is drawn to the arrival (fun review 2026-11-09 asked for rhythm). 1.6× is a clear pop without covering neighbouring faces; under reduced motion the label is bolded instead, no scaling.',
+  },
+  arrivalPopSec: {
+    value: 0.8,
+    why: 'The arrival pop lasts 0.8 s then eases back to the settled size (task 23.5): long enough to notice, short enough not to linger as an oversized ghost. One rise-and-fall, never a repeating flash (Req 10.3).',
+  },
+  settleAfterSec: {
+    value: 3,
+    why: 'An ambient occurrence steady for more than 3 s has made its point, so it settles — fading its band and thinning its texture (task 23.5) — until a new loudness rise brings it back. 3 s matches the live feel that a continuous wind or drone should recede into the background rather than hold the viewer\'s attention indefinitely.',
+  },
+  settleOpacityFactor: {
+    value: 0.5,
+    why: 'A settled ambient band fades to 50% of its opacity (task 23.5), keeping the sprite and label readable while making clear the sound is now background. Halving is a clear step down without the band disappearing.',
+  },
+  settleTextureFactor: {
+    value: 0.5,
+    why: 'A settled ambient band halves its texture density (task 23.5), so a steady wind or rain has visibly calmer motion once it has settled, matching the fade of the band itself.',
   },
 } satisfies GhostConfig;
 

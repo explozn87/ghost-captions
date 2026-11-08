@@ -28,7 +28,7 @@
 // "pulse" is a small opacity breathing well under 3 Hz, disabled under reduced
 // motion (Req 10.3).
 
-import type { EdgeFog, Family, FogEdge, FogTexture, GhostSprite } from '../shared/types.ts';
+import type { EdgeFog, Family, FogTexture, GhostSprite } from '../shared/types.ts';
 import { FOG_CLEAR_CENTRE, baseRadiusFrac, CAPTION_BAND } from './layout.ts';
 
 /**
@@ -264,6 +264,13 @@ export const EDGE_MARGIN = 8;
 export const LABEL_GAP = 4;
 
 /**
+ * Gap (device px) between the bottom of a sprite's body and the top of its
+ * label plate (task 23.5): labels are always placed OUTSIDE the sprite body,
+ * below it, so they never sit on top of the ghost image.
+ */
+export const LABEL_BELOW_GAP = 4;
+
+/**
  * One label plate's geometry, in device pixels (tasks 22.1, 22.2). `x` is the
  * plate's centre; `y` is its top; `w`/`h` its size. `placeLabels` reads and
  * returns these; drawing happens afterwards from the resolved rectangle so a
@@ -278,17 +285,6 @@ export interface LabelRect {
   w: number;
   /** Plate height in device px. */
   h: number;
-}
-
-/** Whether two plates overlap (share any area). */
-function rectsIntersect(a: LabelRect, b: LabelRect): boolean {
-  const aL = a.x - a.w / 2;
-  const aR = a.x + a.w / 2;
-  const bL = b.x - b.w / 2;
-  const bR = b.x + b.w / 2;
-  if (aR <= bL || bR <= aL) return false;
-  if (a.y + a.h <= b.y || b.y + b.h <= a.y) return false;
-  return true;
 }
 
 /**
@@ -343,34 +339,89 @@ export function placeLabels(
 
     const candidate: LabelRect = { x, y, w: input.w, h };
 
-    // 2/3. Resolve overlaps against already-placed plates (task 22.2).
-    // Push down below the lowest intersecting plate; if that passes the caption
-    // band, push up above the highest intersecting plate instead.
-    let guard = 0;
-    for (;;) {
-      const hits = placed.filter((p) => rectsIntersect(candidate, p));
-      if (hits.length === 0) break;
-      if (guard++ > placed.length + 2) break; // safety; cannot loop forever
-      // Try pushing down below the lowest hit.
-      const lowestBottom = Math.max(...hits.map((p) => p.y + p.h));
-      const downY = lowestBottom + LABEL_GAP;
-      if (downY <= maxTop) {
-        candidate.y = downY;
-        continue;
-      }
-      // Pushing down would enter the caption band: push up instead, above the
-      // highest intersecting plate, clamped so the top stays in the frame.
-      const highestTop = Math.min(...hits.map((p) => p.y));
-      const upY = highestTop - LABEL_GAP - h;
-      candidate.y = Math.max(0, upY);
-      // One up move; if it still overlaps something above, the next loop pass
-      // tries again. The guard bounds the iterations.
-    }
+    // 2/3. Resolve overlaps against already-placed plates (task 22.2). Only
+    // plates that overlap this one horizontally can collide, so collect their
+    // occupied vertical intervals and find the nearest free vertical slot of
+    // height `h` within `[0, maxTop]`: first searching downward from the wished
+    // `y` (keeping labels below their ghost where possible), then upward. This
+    // always finds a non-overlapping slot when one exists (the earlier
+    // push-down/push-up loop could leave a residual overlap on crowded frames,
+    // the task-22.2 property defect fast-check found).
+    const horizHits = placed
+      .filter((p) => horizontallyOverlaps(candidate, p))
+      .map((p) => ({ top: p.y, bottom: p.y + p.h }))
+      .sort((a, b) => a.top - b.top);
+
+    candidate.y = findFreeSlot(y, h, maxTop, horizHits);
 
     placed.push(candidate);
   }
 
   return placed;
+}
+
+/** Whether two plates overlap horizontally (share any x range). */
+function horizontallyOverlaps(a: LabelRect, b: LabelRect): boolean {
+  const aL = a.x - a.w / 2;
+  const aR = a.x + a.w / 2;
+  const bL = b.x - b.w / 2;
+  const bR = b.x + b.w / 2;
+  return aR > bL + 1e-9 && bR > aL + 1e-9;
+}
+
+/**
+ * Find a vertical top position for a plate of height `h` that does not overlap
+ * any of the `occupied` intervals (each `{top, bottom}` of a horizontally
+ * overlapping plate), within `[0, maxTop]`. Prefers the wished position `wishY`,
+ * then the nearest free slot below it, then the nearest above. Returns a top in
+ * `[0, maxTop]`; on a frame so crowded no gap fits, it clamps to `maxTop` (the
+ * caption-band rule always wins — the few-pixel residual there is covered by
+ * the degenerate-frame handling). A `LABEL_GAP` is kept between plates.
+ */
+function findFreeSlot(
+  wishY: number,
+  h: number,
+  maxTop: number,
+  occupied: { top: number; bottom: number }[],
+): number {
+  const fits = (top: number): boolean => {
+    if (top < 0 || top > maxTop + 1e-9) return false;
+    const bottom = top + h;
+    for (const o of occupied) {
+      // Overlap if the plate [top, bottom] intersects [o.top - gap, o.bottom + gap).
+      if (top < o.bottom + LABEL_GAP - 1e-9 && o.top - LABEL_GAP + 1e-9 < bottom) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  if (fits(wishY)) return wishY;
+
+  // Candidate tops: just below each occupied interval (stack down) and just
+  // above each (stack up), plus the band ceiling and floor. Pick the one that
+  // fits and is closest to the wished position, breaking ties downward (keep
+  // labels below their ghost) for determinism.
+  const candidates: number[] = [0, maxTop];
+  for (const o of occupied) {
+    candidates.push(o.bottom + LABEL_GAP); // below this plate
+    candidates.push(o.top - LABEL_GAP - h); // above this plate
+  }
+  let best: number | null = null;
+  let bestKey = Infinity;
+  for (const c of candidates) {
+    if (!fits(c)) continue;
+    // Prefer closest to wishY; on a tie prefer the lower (greater y) slot.
+    const dist = Math.abs(c - wishY);
+    const key = dist - (c > wishY ? 1e-6 : 0);
+    if (key < bestKey) {
+      bestKey = key;
+      best = c;
+    }
+  }
+  if (best !== null) return best;
+  // No gap fits (extremely crowded): clamp to the band ceiling.
+  return maxTop;
 }
 
 /** Clamp a number into [lo, hi]; if lo > hi, returns lo (degenerate frame). */
@@ -393,13 +444,16 @@ interface PendingLabel {
   text: string;
   opacity: number;
   rect: LabelRect;
+  /** Draw the label in bold (task 23.5 arrival under reduced motion). */
+  bold: boolean;
 }
 
 /**
  * Measure a label's plate at its wished-for anchor (`cx`, `topY`) without
  * drawing it (tasks 22.1, 22.2). The anchor matches where the inline label used
  * to sit (centred under the ghost); `placeLabels` then clamps it into the frame
- * and clear of other plates, and `drawLabelAt` paints it.
+ * and clear of other plates, and `drawLabelAt` paints it. `bold` (task 23.5)
+ * is carried through so an arriving label under reduced motion is drawn bold.
  */
 function measureLabel(
   ctx: Ctx2D,
@@ -407,13 +461,14 @@ function measureLabel(
   cx: number,
   topY: number,
   opacity: number,
+  bold = false,
 ): PendingLabel {
   ctx.save();
-  ctx.font = `${LABEL_FONT_PX}px sans-serif`;
+  ctx.font = `${bold ? 'bold ' : ''}${LABEL_FONT_PX}px sans-serif`;
   const textW = ctx.measureText(label).width;
   ctx.restore();
   const { w, h } = labelPlateSize(textW);
-  return { text: label, opacity, rect: { x: cx, y: topY, w, h } };
+  return { text: label, opacity, rect: { x: cx, y: topY, w, h }, bold };
 }
 
 /** Options for `draw`, so the sprite loader can be injected in tests. */
@@ -522,7 +577,13 @@ export function draw(
 
       drawFog(octx, cx + dx, cy + dy, radius, sprite.fog, time, reducedMotion);
       drawGhost(octx, sprite, cx + dx, cy + dy, radius, loader);
-      const pending = measureLabel(octx, sprite.label, cx + dx, cy + dy + radius * 0.2, sprite.opacity);
+      // The label is placed just BELOW the sprite body (task 23.5) so it never
+      // sits on top of the ghost image. placeLabels then clamps it into the
+      // frame and clear of other plates. Under reduced motion an arriving label
+      // is drawn bold in place of the scale pop (task 23.5).
+      const labelTop = cy + dy + radius + LABEL_BELOW_GAP;
+      const bold = reducedMotion && sprite.arriving;
+      const pending = measureLabel(octx, sprite.label, cx + dx, labelTop, sprite.opacity, bold);
       if (i === bigIndex) bigLabels.push(pending);
       else markerLabels.push(pending);
     });
@@ -539,7 +600,7 @@ export function draw(
     );
     pendings.forEach((p, i) => {
       const r = rects[i]!;
-      drawLabelAt(octx, p.text, r, p.opacity);
+      drawLabelAt(octx, p.text, r, p.opacity, p.bold);
     });
   }
 
@@ -627,30 +688,24 @@ const FOG_RGB = '205,200,240';
 export const AMBIENT_SPRITE_MIN_OPACITY = 0.6;
 
 /**
- * Draw one ambient event as an edge vignette (tasks 16.3, 18.1–18.3). A linear
- * gradient of pale lavender light fades from the covered edge to fully
- * transparent by `FOG_CLEAR_CENTRE` of the way across, so the central 60% of
- * the frame is never covered (Req 6.5). Whole-frame fog paints both the left
- * and right edges; a known side paints only that edge. The opacity, already
- * capped and smoothed by layout, is shown as-is (no brightness oscillation — a
- * slow steady vignette, so thunder reads as one slow pulse, never a white
- * flash, Req 10.3).
+ * Draw one ambient event as an edge vignette (tasks 16.3, 18.1–18.3, 23.4,
+ * 23.5). A linear gradient of pale lavender light fades from the covered edge
+ * to transparent, so the central 60% of the frame is never covered (Req 6.5).
  *
- * Inside each covered edge band it adds a per-family motion texture (task
- * 18.2) and the family's sprite at half the point-ghost size (task 18.3), in
- * the upper part of the band, so the viewer can identify the sound without the
- * animation (Req 6.3, 6.4) and nothing reaches the caption band (Req 6.5).
- * Reduced motion freezes the texture at the same density.
+ * Task 23.4: the edge is now one of `left`/`right` (a MEASURED side) or `top`
+ * (no known side). A `top` fog sits in a band along the top edge with ONE
+ * sprite + label — it no longer paints both side bands with two copies of the
+ * same sprite. Several active top fogs sit side by side using `topSlot`/
+ * `topCount`, never on top of each other. A `left`/`right` fog keeps its side
+ * band, so a side band always means a measured side.
  *
- * Task 22.4: a whole-frame fog paints its sprite in BOTH the left and right
- * bands (not one sprite in the top centre), so the drifting streaks or notes
- * always sit next to the sprite that names them, and this function returns one
- * label plate per painted band. While the ambient event is active its sprite is
- * drawn at an opacity of at least `AMBIENT_SPRITE_MIN_OPACITY`, so it no longer
- * fades to a faint shape while the label is still on.
+ * Inside the covered band it adds a per-family motion texture (task 18.2, now
+ * using note glyphs drawn as text for music — never bare rectangles, task
+ * 23.4) and the family's sprite (task 18.3), popped on arrival and faded once
+ * settled (task 23.5). The label is placed BELOW the sprite body (task 23.5).
  *
  * It paints the vignette, texture and sprite itself but DOES NOT draw its
- * label(s): it returns them as {@link PendingLabel}s so the caller can resolve
+ * label: it returns it as a {@link PendingLabel} so the caller can resolve
  * every plate of the frame together (tasks 22.1, 22.2).
  */
 function drawEdgeFog(
@@ -665,79 +720,100 @@ function drawEdgeFog(
   if (fog.opacity <= 0) return [];
   const W = ctx.canvas.width;
   const H = ctx.canvas.height;
-  // Band width: half of the cleared-centre complement, so left+right together
-  // leave the central FOG_CLEAR_CENTRE untouched.
+  const topH = H * (1 - captionBand);
+  // Side band width: half of the cleared-centre complement, so left+right
+  // together leave the central FOG_CLEAR_CENTRE untouched.
   const sideFrac = (1 - FOG_CLEAR_CENTRE) / 2;
-  const bandW = W * sideFrac;
+  const sideBandW = W * sideFrac;
+  // The top band is a shallow strip along the top edge (above the picture
+  // centre, never the caption band); its height is a fraction of the frame.
+  const topBandH = Math.min(topH, H * TOP_BAND_FRAC);
+  const spriteOpacity = Math.max(AMBIENT_SPRITE_MIN_OPACITY, fog.opacity);
+  const baseAmbientRadius = baseRadiusFrac() * 0.5 * minDim;
+  const ambientRadius = baseAmbientRadius * (fog.spriteScale || 1);
 
-  const paintEdge = (which: 'left' | 'right') => {
-    const x0 = which === 'left' ? 0 : W;
-    const x1 = which === 'left' ? bandW : W - bandW;
-    const grad = ctx.createLinearGradient(x0, 0, x1, 0);
+  if (fog.edge === 'top') {
+    // A horizontal band at the top. Several top fogs split the band's width
+    // into equal slots so their sprites + labels sit side by side (task 23.4).
+    const count = Math.max(1, fog.topCount);
+    const slot = Math.min(fog.topSlot, count - 1);
+    // Keep the band clear of the central face column only when it is the sole
+    // occupant and the band spans the whole width; splitting into slots already
+    // spreads them, so each slot gets an equal share across the full width.
+    const slotW = W / count;
+    const slotX0 = slot * slotW;
+    const slotCX = slotX0 + slotW / 2;
+
+    // Vertical gradient fading down from the top edge within this slot.
+    const grad = ctx.createLinearGradient(0, 0, 0, topBandH);
     grad.addColorStop(0, `rgba(${FOG_RGB},${fog.opacity.toFixed(3)})`);
     grad.addColorStop(1, `rgba(${FOG_RGB},0)`);
     ctx.save();
     ctx.fillStyle = grad as unknown as CanvasGradient;
     ctx.globalAlpha = 1;
-    const rectX = which === 'left' ? 0 : W - bandW;
-    // The vignette stops at the top of the caption band so it never covers the
-    // dialogue subtitle (task 19.2); the central 60% is already clear.
-    ctx.fillRect(rectX, 0, bandW, H * (1 - captionBand));
+    ctx.fillRect(slotX0, 0, slotW, topBandH);
     ctx.restore();
-  };
 
-  const edges: FogEdge = fog.edge;
-  const paintedEdges: Array<'left' | 'right'> = edges === 'all' ? ['left', 'right'] : [edges];
-  for (const e of paintedEdges) paintEdge(e);
+    // Texture inside this slot's band.
+    drawFogTexture(ctx, fog, slotX0, slotW, topBandH, time, reducedMotion);
 
-  // Band texture inside each covered edge (task 18.2).
-  for (const e of paintedEdges) {
-    const bandX = e === 'left' ? 0 : W - bandW;
-    drawFogTexture(ctx, fog, bandX, bandW, H, time, reducedMotion, captionBand);
+    // One sprite and one label for this slot, sprite above the label.
+    const spriteCY = topBandH * 0.42;
+    drawAmbientSprite(ctx, fog.family, slotCX, spriteCY, ambientRadius, spriteOpacity, loader);
+    const labelTop = spriteCY + ambientRadius + LABEL_BELOW_GAP;
+    return [measureLabel(ctx, fog.label, slotCX, labelTop, 1, reducedMotion && fog.arriving)];
   }
 
-  // The sprite opacity stays strong while the event is active so it always
-  // reads next to its drifting texture (task 22.4), never fading to a faint
-  // shape while the label is on.
-  const spriteOpacity = Math.max(AMBIENT_SPRITE_MIN_OPACITY, fog.opacity);
-  const ambientRadius = baseRadiusFrac() * 0.5 * minDim;
+  // A measured side: paint that side's vertical band.
+  const which: 'left' | 'right' = fog.edge;
+  const x0 = which === 'left' ? 0 : W;
+  const x1 = which === 'left' ? sideBandW : W - sideBandW;
+  const grad = ctx.createLinearGradient(x0, 0, x1, 0);
+  grad.addColorStop(0, `rgba(${FOG_RGB},${fog.opacity.toFixed(3)})`);
+  grad.addColorStop(1, `rgba(${FOG_RGB},0)`);
+  ctx.save();
+  ctx.fillStyle = grad as unknown as CanvasGradient;
+  ctx.globalAlpha = 1;
+  const rectX = which === 'left' ? 0 : W - sideBandW;
+  ctx.fillRect(rectX, 0, sideBandW, topH);
+  ctx.restore();
 
-  // One sprite and one label plate per painted band, so a whole-frame fog names
-  // itself on both sides (task 22.4) and the sprite sits beside the texture
-  // that carries its motion. All in the upper part of the band, clear of the
-  // caption band (Req 6.4, 6.5).
-  const labels: PendingLabel[] = [];
-  for (const e of paintedEdges) {
-    const bandCentreX = e === 'left' ? bandW / 2 : W - bandW / 2;
-    drawAmbientSprite(ctx, fog.family, bandCentreX, H * 0.22, ambientRadius, spriteOpacity, loader);
-    labels.push(measureLabel(ctx, fog.label, bandCentreX, H * 0.1, 1));
-  }
-  return labels;
+  drawFogTexture(ctx, fog, rectX, sideBandW, topH, time, reducedMotion);
+
+  const bandCentreX = which === 'left' ? sideBandW / 2 : W - sideBandW / 2;
+  const spriteCY = H * 0.22;
+  drawAmbientSprite(ctx, fog.family, bandCentreX, spriteCY, ambientRadius, spriteOpacity, loader);
+  const labelTop = spriteCY + ambientRadius + LABEL_BELOW_GAP;
+  return [measureLabel(ctx, fog.label, bandCentreX, labelTop, 1, reducedMotion && fog.arriving)];
 }
 
+/** Fraction of the frame height the shared top ambient band occupies (task 23.4). */
+const TOP_BAND_FRAC = 0.3;
+
 /**
- * Draw the per-family motion texture inside one fog band (task 18.2). The band
- * occupies `[bandX, bandX+bandW] × [0, H]`; shapes stay inside it. Motion is
- * driven by `time` and dropped under reduced motion (a static texture at the
- * same density). Density (count of shapes) scales with `fog.textureDensity`.
- * All shapes use the same lavender light as the fog, so nothing flashes
- * (Req 10.3).
+ * Draw the per-family motion texture inside one fog band (task 18.2, extended
+ * in task 23.4). The band occupies `[bandX, bandX+bandW] × [0, bandH]`; shapes
+ * stay inside it. Motion is driven by `time` and dropped under reduced motion
+ * (a static texture at the same density). Density (count of shapes) scales with
+ * `fog.textureDensity`.
+ *
+ * Task 23.4: music uses note GLYPHS (♪ ♫) drawn as text, never rectangles;
+ * wind uses horizontal streaks; rain thin falling lines; thunder one slow
+ * swell — no bare rectangles or bars remain in any texture. All shapes use the
+ * same lavender light as the fog, so nothing flashes (Req 10.3).
  */
 function drawFogTexture(
   ctx: Ctx2D,
   fog: EdgeFog,
   bandX: number,
   bandW: number,
-  H: number,
+  bandH: number,
   time: number,
   reducedMotion: boolean,
-  captionBand: number,
 ): void {
   const texture: FogTexture = fog.texture;
   if (texture === 'none') return;
-  // The texture lives above the caption band, clear of the dialogue subtitle.
-  const topH = H * (1 - captionBand);
-  // A few shapes, more when denser; at least one so the texture always reads.
+  // A few shapes, more when denser; at least two so the texture always reads.
   const count = 2 + Math.round(fog.textureDensity * 4);
   const alpha = Math.min(1, fog.opacity * 1.4);
   const colour = `rgba(${FOG_RGB},${alpha.toFixed(3)})`;
@@ -746,8 +822,8 @@ function drawFogTexture(
   ctx.fillStyle = colour;
   ctx.globalAlpha = 1;
 
-  // Draw a rect clamped to the band [bandX, bandX+bandW] so no texture shape
-  // ever reaches the central 60% of the frame (Req 6.5).
+  // A rect clamped to the band so no shape ever reaches the central 60% of the
+  // frame (Req 6.5). Used for wind/rain/thunder only — music uses glyph text.
   const bandEnd = bandX + bandW;
   const bandRect = (x: number, y: number, w: number, h: number) => {
     const x0 = Math.max(bandX, x);
@@ -756,42 +832,53 @@ function drawFogTexture(
     ctx.fillRect(x0, y, x1 - x0, h);
   };
 
+  if (texture === 'notesTense' || texture === 'notesCalm') {
+    // Music draws note glyphs as TEXT, never rectangles (task 23.4). Tense
+    // drifts faster and uses the busier ♫; calm is slower with a plain ♪.
+    const speed = texture === 'notesTense' ? 50 : 22;
+    const glyph = texture === 'notesTense' ? '♫' : '♪';
+    const size = (texture === 'notesTense' ? 0.09 : 0.11) * bandH;
+    ctx.font = `${Math.max(10, Math.round(size))}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < count; i++) {
+      const fracX = (i + 0.5) / count;
+      const x = bandX + fracX * bandW;
+      const baseY = ((i * 0.37) % 1) * bandH;
+      const drift = reducedMotion ? 0 : ((time * speed + i * 40) % bandH);
+      const y = (baseY + drift) % bandH;
+      ctx.fillText(glyph, x, y);
+    }
+    ctx.restore();
+    return;
+  }
+
   for (let i = 0; i < count; i++) {
-    // A per-shape base position spread across the band and height.
     const fracX = (i + 0.5) / count;
-    const fracY = ((i * 0.37) % 1);
+    const fracY = (i * 0.37) % 1;
     const baseX = bandX + fracX * bandW;
-    const baseY = fracY * topH;
+    const baseY = fracY * bandH;
 
     if (texture === 'windStreaks') {
       // Soft horizontal streaks drifting across the band.
       const drift = reducedMotion ? 0 : ((time * 40 + i * 30) % bandW);
       const x = bandX + ((fracX * bandW + drift) % bandW);
       const w = bandW * 0.5;
-      const h = Math.max(2, H * 0.012);
+      const h = Math.max(2, bandH * 0.03);
       bandRect(x, baseY, w, h);
     } else if (texture === 'rainStreaks') {
       // Thin falling streaks.
-      const fall = reducedMotion ? 0 : ((time * 120 + i * 50) % topH);
-      const y = (baseY + fall) % topH;
+      const fall = reducedMotion ? 0 : ((time * 120 + i * 50) % bandH);
+      const y = (baseY + fall) % bandH;
       const w = Math.max(1, bandW * 0.02);
-      const h = H * 0.06;
+      const h = bandH * 0.18;
       bandRect(baseX, y, w, h);
     } else if (texture === 'thunderSwell') {
-      // One slow edge swell: a single broad bar whose width breathes slowly,
+      // One slow edge swell: a single broad band whose width breathes slowly,
       // never a flash (Req 10.3). Only one shape regardless of density.
       if (i > 0) continue;
       const swell = reducedMotion ? 0.6 : 0.6 + 0.3 * Math.sin(2 * Math.PI * 0.2 * time);
-      bandRect(bandX, 0, bandW * swell, topH);
-    } else if (texture === 'notesTense' || texture === 'notesCalm') {
-      // A few note shapes drifting slowly; tense drifts faster and sharper.
-      const speed = texture === 'notesTense' ? 50 : 22;
-      const size = (texture === 'notesTense' ? 0.05 : 0.07) * H;
-      const drift = reducedMotion ? 0 : ((time * speed + i * 40) % topH);
-      const y = (baseY + drift) % topH;
-      // Note head (square) with a stem.
-      bandRect(baseX, y, size, size);
-      bandRect(baseX + size * 0.8, y - size, Math.max(1, size * 0.15), size * 1.2);
+      bandRect(bandX, 0, bandW * swell, bandH);
     }
   }
   ctx.restore();
@@ -876,11 +963,11 @@ function drawGhost(
  * ratio > 12:1); `opacity` fades the whole label with its ghost/fog while
  * keeping the contrast ratio (plate and text fade together).
  */
-function drawLabelAt(ctx: Ctx2D, label: string, rect: LabelRect, opacity: number): void {
+function drawLabelAt(ctx: Ctx2D, label: string, rect: LabelRect, opacity: number, bold = false): void {
   const a = clamp01(opacity);
   if (a <= 0) return;
   ctx.save();
-  ctx.font = `${LABEL_FONT_PX}px sans-serif`;
+  ctx.font = `${bold ? 'bold ' : ''}${LABEL_FONT_PX}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   const plateX = rect.x - rect.w / 2;

@@ -138,6 +138,7 @@ function sprite(): GhostSprite {
     trembleHz: 0,
     opacity: 1,
     label: 'a ghost label',
+    arriving: false,
   };
 }
 

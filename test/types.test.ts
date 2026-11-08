@@ -103,22 +103,28 @@ describe('shared types (task 2.1)', () => {
       trembleHz: 0,
       opacity: 1,
       label: 'scream, from the left',
+      arriving: false,
     };
     expectTypeOf<GhostSprite['label']>().toEqualTypeOf<string>();
     expect(s.label.length).toBeGreaterThan(0);
   });
 
-  it('EdgeFog carries an edge, opacity, label, texture and density (tasks 16.3, 18.2)', () => {
+  it('EdgeFog carries an edge, opacity, label, texture and density (tasks 16.3, 18.2, 23.4, 23.5)', () => {
     const f: EdgeFog = {
       family: 'thunder',
-      edge: 'all',
+      edge: 'top',
       opacity: 0.3,
       label: 'thunder',
       texture: 'thunderSwell',
       textureDensity: 0.5,
+      spriteScale: 1,
+      settled: false,
+      topSlot: 0,
+      topCount: 1,
+      arriving: false,
     };
     expectTypeOf<EdgeFog['edge']>().toEqualTypeOf<FogEdge>();
-    expectTypeOf<FogEdge>().toEqualTypeOf<'left' | 'right' | 'all'>();
+    expectTypeOf<FogEdge>().toEqualTypeOf<'left' | 'right' | 'top'>();
     expect(f.label.length).toBeGreaterThan(0);
     expect(f.texture).toBe('thunderSwell');
     expect(f.textureDensity).toBeGreaterThanOrEqual(0);

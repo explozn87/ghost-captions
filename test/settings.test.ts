@@ -115,3 +115,43 @@ describe('latestMissedEvent (task 22.5)', () => {
     expect(latestMissedEvent(events, 4, muted)!.id).toBe('a');
   });
 });
+
+// Task 23.1/23.2: the counter now counts OCCURRENCES and honours a loaded
+// subtitle file through missedCount's extra dialogue argument.
+
+describe('missedCount counts occurrences, not raw events (task 23.1)', () => {
+  it('folds same-family touching events into one count', () => {
+    // Music split into three touching pieces (the Sintel defect) counts once.
+    const music: SoundEvent[] = [
+      ev({ id: 'm1', family: 'calmMusic', start: 10, end: 12 }),
+      ev({ id: 'm2', family: 'tenseMusic', start: 12, end: 13 }),
+      ev({ id: 'm3', family: 'singing', start: 13, end: 14 }),
+    ];
+    expect(missedCount(music, 14, noMute)).toBe(1);
+  });
+
+  it('a trend change inside an occurrence does not add to the count', () => {
+    const pieces: SoundEvent[] = [
+      ev({ id: 'a', family: 'calmMusic', start: 0, end: 2, trend: 'rising' }),
+      ev({ id: 'b', family: 'calmMusic', start: 2, end: 4, trend: 'falling' }),
+    ];
+    expect(missedCount(pieces, 4, noMute)).toBe(1);
+  });
+});
+
+describe('missedCount honours a loaded subtitle file (task 23.2)', () => {
+  const events: SoundEvent[] = [
+    ev({ id: 'g', family: 'gunshot', start: 2, end: 3 }),
+    ev({ id: 'w', family: 'wind', start: 5, end: 7 }),
+  ];
+
+  it('does not count an occurrence a describing cue already covers', () => {
+    const dialogue = [{ start: 2, end: 3, text: '[gunshot]' }];
+    expect(missedCount(events, 10, noMute, dialogue)).toBe(1); // only wind
+  });
+
+  it('counts both when the cue is ordinary spoken dialogue', () => {
+    const dialogue = [{ start: 2, end: 3, text: 'Fire!' }];
+    expect(missedCount(events, 10, noMute, dialogue)).toBe(2);
+  });
+});

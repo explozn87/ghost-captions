@@ -155,10 +155,23 @@ export interface GhostSprite {
   opacity: number;
   /** The text label drawn with the ghost (never only motion/colour). */
   label: string;
+  /**
+   * True during the arrival window (task 23.5). The sprite scale already
+   * carries the arrival pop when motion is allowed; under reduced motion the
+   * pop is dropped and `draw` renders the label in bold for this window instead,
+   * so the arrival still reads without any movement.
+   */
+  arriving: boolean;
 }
 
-/** Which screen edge(s) an edge-fog vignette covers (task 16.3). */
-export type FogEdge = 'left' | 'right' | 'all';
+/**
+ * Which screen edge(s) an edge-fog vignette covers (task 16.3, extended in task
+ * 23.4). `left`/`right` are used only when the side was measured; an ambient
+ * sound with no known side uses `top` — a band along the top edge (above the
+ * picture's centre, never the caption band) with ONE sprite + label — instead
+ * of painting both side bands with two copies of the same sprite (task 23.4).
+ */
+export type FogEdge = 'left' | 'right' | 'top';
 
 /**
  * The motion texture drawn inside an ambient event's fog band (task 18.2).
@@ -196,6 +209,28 @@ export interface EdgeFog {
    * texture is denser for a louder, more ominous ambient sound (task 18.2).
    */
   textureDensity: number;
+  /**
+   * Size multiplier for the band sprite (task 23.5): 1 normally, lifted to the
+   * configured arrival pop just after the occurrence starts, then eased back.
+   */
+  spriteScale: number;
+  /**
+   * True once an ambient occurrence has been steady past the settle time (task
+   * 23.5): the band fades and its texture thins, keeping the sprite and label.
+   */
+  settled: boolean;
+  /**
+   * Slot index among the top-band fogs active at this instant (task 23.4), so
+   * `draw` can place several `top` fogs side by side without overlapping, and
+   * the count of such fogs so each can take an equal share of the band.
+   */
+  topSlot: number;
+  topCount: number;
+  /**
+   * True during the arrival window (task 23.5), so `draw` can render the band
+   * label in bold under reduced motion (where `spriteScale` stays 1).
+   */
+  arriving: boolean;
 }
 
 /**
