@@ -70,14 +70,22 @@ a { color: var(--accent); }
 @keyframes missed-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.12); } 100% { transform: scale(1); } }
 
 /* Centred end card shown when the video finishes (task 22.5, 23.3). The card
-   always fits the player (task 27.4): a flex column capped at the player
-   height, with the evidence list scrolling inside it and "Watch again" pinned
-   below the scroll area so it stays visible in the inline player and in full
-   screen. */
+   always fits the player (task 27.4, 31.1): a flex column bounded to the player
+   box (max-height: 100%, box-sizing: border-box, inner padding top/bottom ≥
+   12 px) with the evidence list the only scroll area and "Watch again" pinned
+   below it, so at 1366×768 and 1280×720 nothing runs past the bottom edge and
+   the headline's first line never touches the top. The fixed items (headline,
+   basis, "Watch again") keep their size; the list takes the remaining height
+   and shrinks to fit (task 31.1). */
 .player__endcard { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 10px; text-align: center;
-  background: rgba(10,12,18,.72); padding: 24px; line-height: 1.4; max-height: 100%; overflow: hidden; }
+  align-items: center; justify-content: center; gap: 10px; text-align: center; box-sizing: border-box;
+  background: rgba(10,12,18,.72); padding: 16px 24px; line-height: 1.4; max-height: 100%; overflow: hidden; }
 .player__endcard-text { margin: 0; font-size: 1.15rem; max-width: 36ch; word-break: keep-all; flex: none; }
+/* When the player box is short, the headline drops one step BEFORE the list
+   starts to lose rows (task 31.1), so the count always reads cleanly. */
+@media (max-height: 520px) {
+  .player__endcard-text { font-size: 1rem; }
+}
 /* The one-sentence close after a Compare (task 29.5): naming the row just
    compared, under the headline. Quiet accent, wraps at word boundaries. */
 .player__endcard-closing { margin: 0; font-size: .95rem; max-width: 40ch; color: var(--accent);
@@ -85,11 +93,14 @@ a { color: var(--accent); }
 .player__endcard-basis { margin: 0; color: var(--muted); font-size: .9rem; flex: none; }
 .player__endcard-heading { margin: 8px 0 0; font-size: .95rem; color: var(--muted); font-weight: 600; flex: none; }
 /* Evidence list of counted occurrences (task 23.3): rows are buttons with
-   text, keyboard reachable; more than 8 rows scroll inside the card. The list
-   shrinks (flex: 1 1 auto, min-height: 0) so "Watch again" below it is never
-   pushed off the card (task 27.4). */
-.player__endcard-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px;
-  max-height: calc(8 * 34px); min-height: 0; flex: 1 1 auto; overflow-y: auto; overflow-x: hidden;
+   text, keyboard reachable. The list takes the remaining height and is the only
+   scroll area (flex: 1 1 auto, min-height: 0, overflow-y: auto), so it shrinks
+   to fit a short box and "Watch again" below it is never pushed off the card
+   (task 27.4, 31.1). `padding-bottom` keeps the last row clear of the bottom
+   edge so it is never clipped at 1280×720. No hard max-height: the flexbox
+   bounds it to what the box leaves. */
+.player__endcard-list { list-style: none; margin: 0; padding: 0 0 8px; display: grid; gap: 4px;
+  min-height: 0; flex: 1 1 auto; overflow-y: auto; overflow-x: hidden;
   width: min(32ch, 80vw); justify-self: center; scroll-padding-top: 8px; }
 .player__endcard-row { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-align: left;
   padding: 5px 10px; }
@@ -112,11 +123,13 @@ a { color: var(--accent); }
 .player__endcard-compare--primary:hover { filter: brightness(1.08); }
 .player__endcard-time { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 3.5ch; flex: none; }
 .player__endcard-sprite { flex: none; object-fit: contain; }
-/* The label wraps only at word boundaries and at most two lines, with a sane
-   minimum width, so a Korean label beside the Compare button never breaks
-   letter by letter (task 28.1). */
+/* The label wraps only at word boundaries, with a sane minimum width, so a
+   Korean label beside the Compare button never breaks letter by letter
+   (task 28.1). It is never truncated with an ellipsis (task 31.1): at 1280×720
+   the line-clamp hid part of "총성, 오른쪽에서"; now it wraps onto as many lines
+   as it needs and the row grows, and the list scrolls if the card is short. */
 .player__endcard-label { flex: 1; min-width: 8ch; word-break: keep-all; overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  white-space: normal; text-overflow: clip; overflow: visible; }
 .player__endcard-again { justify-self: center; margin-top: 4px; flex: none; }
 
 /* The app's own controls (tasks 28.4, 29.2): the native <video> controls are

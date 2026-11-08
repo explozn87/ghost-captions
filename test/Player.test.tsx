@@ -777,3 +777,84 @@ describe('Player draws on every rAF, not the rVFC cadence (task 30.1)', () => {
     expect(last(times)).toBe(8.9);
   });
 });
+
+// --- Task 31: the end card stays inside the video box on small screens ------
+
+/** Extract the declaration block of a single CSS selector from `appCss`. */
+function cssBlock(selector: string): string {
+  const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = appCss.match(new RegExp(`${esc}\\s*\\{([^}]*)\\}`));
+  expect(m, `selector ${selector} should exist in app.css`).not.toBeNull();
+  return (m as RegExpMatchArray)[1] ?? '';
+}
+
+describe('Player end card fits the box on small screens (task 31.1)', () => {
+  it('the end card is a bounded flex column inside the player box', () => {
+    const endcard = cssBlock('.player__endcard');
+    // A flex column, capped to the box with border-box sizing so the padding
+    // counts inside the 100 % height — at 1366×768 and 1280×720 it no longer
+    // runs past the bottom edge.
+    expect(endcard).toMatch(/display:\s*flex/);
+    expect(endcard).toMatch(/flex-direction:\s*column/);
+    expect(endcard).toMatch(/box-sizing:\s*border-box/);
+    expect(endcard).toMatch(/max-height:\s*100%/);
+    // Inner padding keeps the headline's first line off the top edge: top/
+    // bottom padding is at least 12 px (here 16 px).
+    const pad = endcard.match(/padding:\s*([^;]+);/);
+    expect(pad).not.toBeNull();
+    const topPad = parseInt((pad as RegExpMatchArray)[1]!.trim().split(/\s+/)[0]!, 10);
+    expect(topPad).toBeGreaterThanOrEqual(12);
+  });
+
+  it('the evidence list is the only scroll area and takes the remaining height', () => {
+    const list = cssBlock('.player__endcard-list');
+    // It grows/shrinks to fill the space the fixed items leave, with its own
+    // scroll, so "Watch again" below it is never pushed off.
+    expect(list).toMatch(/flex:\s*1\s+1\s+auto/);
+    expect(list).toMatch(/min-height:\s*0/);
+    expect(list).toMatch(/overflow-y:\s*auto/);
+    // No hard max-height any more: the flexbox bounds it to the box (task 31.1),
+    // otherwise a short box overflows.
+    expect(list).not.toMatch(/max-height/);
+    // Padding at the bottom so the last row is never clipped at 1280×720.
+    expect(list).toMatch(/padding:\s*0\s+0\s+\d/);
+  });
+
+  it('the headline and "Watch again" keep a fixed size (flex: none)', () => {
+    expect(cssBlock('.player__endcard-text')).toMatch(/flex:\s*none/);
+    expect(cssBlock('.player__endcard-again')).toMatch(/flex:\s*none/);
+  });
+
+  it('labels wrap at word boundaries and are never ellipsised', () => {
+    const label = cssBlock('.player__endcard-label');
+    // Wrap at word boundaries (task 28.1 kept) ...
+    expect(label).toMatch(/word-break:\s*keep-all/);
+    // ... and never truncate with an ellipsis or a line clamp (task 31.1): at
+    // 1280×720 "총성, 오른쪽에서" was clipped to "총성, 오른쪽…".
+    expect(label).not.toMatch(/text-overflow:\s*ellipsis/);
+    expect(label).not.toMatch(/-webkit-line-clamp/);
+  });
+
+  it('shrinks the headline one step before the list on a short box', () => {
+    // A max-height media query drops the headline font so the count reads
+    // cleanly before the list loses rows (task 31.1).
+    expect(appCss).toMatch(/@media\s*\(max-height:\s*\d+px\)\s*\{[^}]*\.player__endcard-text\s*\{[^}]*font-size/);
+  });
+
+  it('renders the end card as a flex column with headline, list and "Watch again"', () => {
+    const strings = t('en');
+    const { container } = render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    const card = container.querySelector('.player__endcard');
+    expect(card).not.toBeNull();
+    // The fixed headline and "Watch again" are direct children of the card, so
+    // the flex column keeps them pinned above and below the scrolling list.
+    expect(card!.querySelector(':scope > .player__endcard-text')).not.toBeNull();
+    expect(card!.querySelector(':scope > .player__endcard-list')).not.toBeNull();
+    expect(card!.querySelector(':scope > .player__endcard-again')).not.toBeNull();
+  });
+});
