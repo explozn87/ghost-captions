@@ -89,8 +89,10 @@ async function loadMediapipe(): Promise<MpModule> {
   // The `@vite-ignore` keeps Vite from trying to pre-bundle/resolve this at
   // build time when the optional dependency is absent; in a full install Vite
   // bundles it normally. The cast narrows the untyped module to what we use.
-  const specifier = '@mediapipe/tasks-audio';
-  const mod = (await import(/* @vite-ignore */ specifier)) as unknown as MpModule;
+  // A literal specifier so Vite bundles the package into the built site. (A
+  // variable with @vite-ignore left a bare specifier the browser cannot resolve:
+  // tests passed, the live page could never load labels.)
+  const mod = (await import('@mediapipe/tasks-audio')) as unknown as MpModule;
   if (!mod?.FilesetResolver || !mod?.AudioClassifier) {
     throw new Error('MediaPipe audio tasks module is missing expected exports.');
   }

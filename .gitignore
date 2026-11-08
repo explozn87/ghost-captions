@@ -23,3 +23,6 @@ npm-debug.log*
 
 # NOTE: /.kiro (specs, hooks, steering) is intentionally NOT ignored.
 # It must stay tracked in the repository for the hackathon requirements.
+
+# Copied from node_modules at build time (scripts/copy-wasm.mjs)
+public/wasm/
