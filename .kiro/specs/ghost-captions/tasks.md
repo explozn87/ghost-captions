@@ -89,3 +89,9 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
     - _Requirements: NFR-3_
   - [ ] 14.2 README: what it is (story order from steering), how to try it in 30 s, how it works, limits, credits and licences, "How we used Kiro".
     - _Requirements: 11.1, NFR-4_
+
+- [ ] 15. Specific sound labels (feedback from browser check, 2026-11-08)
+  - [ ] 15.1 Ghost labels, the event list, the timeline tooltip and WebVTT cues show the specific classifier label (`SoundEvent.topLabel`, e.g. "Wind", "Thunder", "Car", "Choir") when its score is at or above a new config value `specificLabelThreshold` (default 0.3, with a `why`); otherwise they fall back to the family name. Families still decide the ghost silhouette. Never show a specific label for `unknown` events.
+    - _Requirements: 3.1, 3.5, 6.4, 7.2, 8.1, 8.2_
+  - [ ] 15.2 Add `src/i18n/soundLabels.ko.ts`: a natural Korean name for every `display_name` in `test/fixtures/yamnet_class_map.csv` (521 entries; short everyday words a viewer would say, e.g. "Wind" → "바람", "Wind noise (microphone)" → "마이크 바람 소리", "Artillery fire" → "포격"). English uses the display_name as is. Test: every class-map name has a non-empty Korean entry, and the Sintel fixture events show "바람"/"Wind" where the top label is Wind.
+    - _Requirements: 9.1, 9.2_
