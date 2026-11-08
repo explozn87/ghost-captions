@@ -270,6 +270,8 @@ function WatchScreen({
         src={src}
         track={track}
         dialogue={dialogue}
+        endAt={credit?.endAt}
+        isDemo={credit != null}
         settings={settings}
         strings={strings}
         onOpenShowWhen={() => setShowSettings(true)}

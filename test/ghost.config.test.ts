@@ -131,6 +131,18 @@ describe('ghost.config (task 2.2)', () => {
     expect(ghostConfig.overlayFadeSeconds.value).toBeLessThanOrEqual(2);
   });
 
+  it('carries the task-25 timing values with a why (tasks 25.1, 25.2, 25.3)', () => {
+    expectHasWhy(ghostConfig.evidenceSpanMinSec);
+    expectHasWhy(ghostConfig.trendLabelSec);
+    expectHasWhy(ghostConfig.settleSec);
+    expect(ghostConfig.evidenceSpanMinSec.value).toBe(3);
+    expect(ghostConfig.trendLabelSec.value).toBe(3);
+    expect(ghostConfig.settleSec.value).toBe(3);
+    // settleSec is at least the band-fade settle time, so a sound fades its
+    // band before it folds to a chip.
+    expect(ghostConfig.settleSec.value).toBeGreaterThanOrEqual(ghostConfig.settleAfterSec.value);
+  });
+
   it('gives every family a motion kind with a why (task 17.3)', () => {
     const kinds = ghostConfig.motionByFamily.value;
     expect(Object.keys(kinds).sort()).toEqual([...ALL_FAMILIES].sort());

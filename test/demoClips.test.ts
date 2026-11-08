@@ -41,6 +41,13 @@ describe('demo clip manifest (task 11.1)', () => {
     // allow-list must still answer false if one is forced in.
     expect(isRedistributable('All-Rights-Reserved' as unknown as SpdxLicence)).toBe(false);
   });
+
+  it('gives the Sintel demo a short endAt and leaves the field recording untrimmed (task 25.6)', () => {
+    const sintel = DEMO_CLIPS.find((c) => c.id === 'sintel-trailer');
+    expect(sintel?.endAt).toBe(25);
+    const highway = DEMO_CLIPS.find((c) => c.id === 'highway-field');
+    expect(highway?.endAt).toBeUndefined();
+  });
 });
 
 describe('loadDemoFile (task 11.1, Req 1.5)', () => {

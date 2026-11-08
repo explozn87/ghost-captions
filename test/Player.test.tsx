@@ -228,3 +228,62 @@ describe('Player missed-sounds counter (task 22.5)', () => {
     expect(screen.getByText('자막만 봤다면 이 영상에서 소리 2개를 놓쳤습니다.')).toBeInTheDocument();
   });
 });
+
+describe('Player end-card evidence, compare, endAt (tasks 25.1, 25.5, 25.6, 25.7)', () => {
+  it('each evidence row has a Compare button alongside the seek row', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    // Two counted occurrences → two Compare buttons.
+    const compares = screen.getAllByRole('button', { name: strings.ui.compare });
+    expect(compares).toHaveLength(2);
+  });
+
+  it('a demo with no subtitle file spells out the dialogue-only basis (task 25.7)', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} isDemo />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    expect(screen.getByText(strings.ui.missedBasisDemoNoFile)).toBeInTheDocument();
+  });
+
+  it('a short demo ends at endAt and counts only occurrences before it (task 25.6)', () => {
+    const strings = t('en');
+    render(
+      <Player
+        src="blob:mock"
+        track={soundTrack}
+        settings={settingsWith('auto')}
+        strings={strings}
+        endAt={3}
+        isDemo
+      />,
+    );
+    const video = getVideo();
+    // Reaching endAt (3 s) treats it as the end: only the gunshot (t=1) counts,
+    // the car (t=4) is past endAt and never counted.
+    setTime(video, 3);
+    expect(screen.getByText('Captions would have missed 1 sounds in this clip.')).toBeInTheDocument();
+  });
+
+  it('clicking Compare shows the "Captions only" chip first (task 25.5)', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    act(() => {
+      screen.getAllByRole('button', { name: strings.ui.compare })[0]!.click();
+    });
+    expect(screen.getByText(strings.ui.compareCaptionsOnly)).toBeInTheDocument();
+  });
+});

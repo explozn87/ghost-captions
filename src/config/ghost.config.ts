@@ -137,6 +137,27 @@ export interface GhostConfig {
    * framing.
    */
   topBandFrac: Tuned;
+  /**
+   * The minimum span (seconds) an occurrence must last before the end-card
+   * evidence row shows a range ("0:10–0:52 · Music") rather than just its
+   * start (task 25.1). A short bang is a moment, not a span.
+   */
+  evidenceSpanMinSec: Tuned;
+  /**
+   * How long (seconds) a trend word ("getting louder/quieter") stays appended
+   * to a label after the trend starts, before the label returns to the plain
+   * name (task 25.2). A transient cue, so a steady sound does not carry
+   * "getting louder" for its whole life.
+   */
+  trendLabelSec: Tuned;
+  /**
+   * How long (seconds) an ambient occurrence must be steady before it folds
+   * away into a small corner chip and its band fades out (task 25.3). A new
+   * loudness rise unfolds it again. Distinct from `settleAfterSec` (which only
+   * fades/thins the band, task 23.5): past `settleSec` the band is removed
+   * entirely so the centre of the top edge is free for in-video titles.
+   */
+  settleSec: Tuned;
 }
 
 /**
@@ -359,6 +380,18 @@ export const ghostConfig = {
   topBandFrac: {
     value: 0.18,
     why: 'The shared top ambient band is 18% of the frame height (task 24.3), down from the earlier 0.3: shallow enough to stay above faces in typical framing while still holding a no-side ambient fog\'s sprite, label and texture. Its sprite and texture stay inside the band; only the label plate may extend just below it, never into the caption band.',
+  },
+  evidenceSpanMinSec: {
+    value: 3,
+    why: 'An end-card evidence row shows a span ("0:10–0:52 · Music") only when the occurrence lasts 3 s or more (task 25.1); a shorter sound (a gunshot) is a single moment and shows just its start. 3 s matches the settle time — a sound that lasts long enough to settle is long enough to read as a span.',
+  },
+  trendLabelSec: {
+    value: 3,
+    why: 'A trend word ("getting louder/quieter") is appended to a label only for 3 s after the trend starts, then the label returns to the plain name (task 25.2). Fun review round 3: a steady sound carrying "getting louder" for its whole life read as stale; a transient cue draws the eye to the change then settles.',
+  },
+  settleSec: {
+    value: 3,
+    why: 'An ambient occurrence steady for more than 3 s folds away into a small corner chip and its band fades out (task 25.3), freeing the centre of the top edge for in-video titles and credits. A new loudness rise unfolds it again. 3 s matches the band-fade settle time (task 23.5) so a sound fades its band, then folds to a chip, in one continuous gesture.',
   },
 } satisfies GhostConfig;
 

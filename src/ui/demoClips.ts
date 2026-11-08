@@ -44,6 +44,14 @@ export interface DemoClip {
   mime: string;
   /** One line on what this clip is meant to show (honesty, steering). */
   note: string;
+  /**
+   * Optional end point (seconds) for the demo (task 25.6): playback treats
+   * reaching `endAt` as the end of the clip — it pauses, shows the end card and
+   * counts only occurrences before it. Used to trim a demo to its meaningful
+   * part (Sintel's second half is title, music and credits). User files have
+   * no `endAt`.
+   */
+  endAt?: number;
 }
 
 /**
@@ -68,6 +76,11 @@ export const DEMO_CLIPS: readonly DemoClip[] = [
     src: '/demo/sintel-trailer.webm',
     mime: 'video/webm',
     note: 'A mixed film soundtrack — often the honest "direction unknown" case.',
+    // endAt (task 25.6): the trailer's second half is title cards, closing
+    // music and credits with little to show; trimming to 25 s keeps a judge's
+    // minute on the part full of sounds the captions miss. The clip's
+    // attribution stays in the picker and the source line above the player.
+    endAt: 25,
   },
   {
     id: 'highway-field',

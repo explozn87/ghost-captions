@@ -386,14 +386,29 @@ function edgePop(event: SoundEvent, t: number, reducedMotion: boolean, cfg: Ghos
  * tables and resolver as the caption export so overlay and export never
  * disagree (Req 9.2). `lang` defaults to English so callers holding only a
  * `Strings` table keep working.
+ *
+ * Task 25.2 — the trend word is TRANSIENT: it is appended only for
+ * `trendLabelSec` seconds after the trend starts (the event start), then the
+ * label returns to the plain name. Pass the current time `t` to apply this;
+ * when `t` is omitted (e.g. the WebVTT export, where a cue spans the whole
+ * event) the trend is always included.
  */
-export function spriteLabel(event: SoundEvent, s: Strings, lang: Lang = 'en'): string {
+export function spriteLabel(
+  event: SoundEvent,
+  s: Strings,
+  lang: Lang = 'en',
+  t?: number,
+  cfg: GhostConfig = ghostConfig,
+): string {
   const parts: string[] = [soundNoun(event, s, lang)];
   if (event.side === 'left' || event.side === 'right') {
     parts.push(s.side[event.side]);
   }
   if (event.trend === 'rising' || event.trend === 'falling') {
-    parts.push(s.trend[event.trend]);
+    // The trend word is transient (task 25.2): shown only within trendLabelSec
+    // of the event start. When no time is given (export), it is always shown.
+    const withinTrendWindow = t == null || t - event.start <= cfg.trendLabelSec.value;
+    if (withinTrendWindow) parts.push(s.trend[event.trend]);
   }
   return parts.join(s.join);
 }
@@ -507,7 +522,7 @@ export function layout(
       fog: clamp(event.ominous, 0, 1),
       trembleHz,
       opacity: clamp01(edgeOpacity * faceDim),
-      label: spriteLabel(event, s, settings.lang),
+      label: spriteLabel(event, s, settings.lang, t),
       arriving: isArriving(event, t, cfg),
     });
   });
@@ -600,6 +615,20 @@ function fogSettledAt(event: SoundEvent, t: number, cfg: GhostConfig): boolean {
 }
 
 /**
+ * Whether an ambient event has been steady long enough to FOLD into a corner
+ * chip (task 25.3): active for more than the longer `settleSec` with no recent
+ * loudness rise. Same shape as {@link fogSettledAt} but with the longer
+ * threshold, so a sound first fades its band (settle, task 23.5) then folds to
+ * a chip. A rising event never folds. Kept under reduced motion as a static
+ * state (the chip is shown without the fold animation, Req 6.6).
+ */
+function fogFoldedAt(event: SoundEvent, t: number, cfg: GhostConfig): boolean {
+  if (t < event.start + cfg.settleSec.value) return false;
+  if (t >= event.end) return false;
+  return event.trend !== 'rising';
+}
+
+/**
  * The band-sprite scale for an ambient event at time `t` (task 23.5): the
  * arrival pop just after the occurrence starts, then 1. Shares
  * {@link arrivalPop}'s shape so point and ambient arrivals feel the same.
@@ -651,6 +680,7 @@ export function edgeFogs(
     opacity: number;
     textureDensity: number;
     settled: boolean;
+    folded: boolean;
     spriteScale: number;
     arriving: boolean;
   }
@@ -663,6 +693,7 @@ export function edgeFogs(
     const opacity = fogOpacityAt(event, t, settings.reducedMotion, cfg);
     if (opacity <= 0) continue;
     const settled = fogSettledAt(event, t, cfg);
+    const folded = fogFoldedAt(event, t, cfg);
     // Texture density tracks loudness/ominousness so a louder, more ominous
     // ambient sound has a denser band texture (task 18.2); a settled band
     // thins its texture (task 23.5).
@@ -678,6 +709,7 @@ export function edgeFogs(
       opacity: fogOpacity,
       textureDensity,
       settled,
+      folded,
       spriteScale: fogSpriteScaleAt(event, t, settings.reducedMotion, cfg),
       arriving: isArriving(event, t, cfg),
     });
@@ -709,23 +741,29 @@ export function edgeFogs(
     // A merged fog has settled only when every member has settled: a fresh
     // member keeps the band awake.
     let allSettled = members[0]!.settled;
+    // Likewise a merged fog folds only when every member has folded.
+    let allFolded = members[0]!.folded;
     for (const m of members) {
       if (m.opacity > maxOpacity) maxOpacity = m.opacity;
       if (m.textureDensity > maxTextureDensity) maxTextureDensity = m.textureDensity;
       if (m.spriteScale > maxSpriteScale) maxSpriteScale = m.spriteScale;
       if (m.arriving) anyArriving = true;
       if (!m.settled) allSettled = false;
+      if (!m.folded) allFolded = false;
       if (m.event.loudness > loudest.event.loudness) loudest = m;
     }
     merged.push({
       family: loudest.event.family,
       edge: loudest.edge,
       opacity: maxOpacity,
-      label: spriteLabel(loudest.event, s, settings.lang),
+      label: spriteLabel(loudest.event, s, settings.lang, t),
       texture: ambientTextureOf(loudest.event.family, cfg) as FogTexture,
       textureDensity: maxTextureDensity,
       spriteScale: maxSpriteScale,
       settled: allSettled,
+      folded: allFolded,
+      foldSlot: 0,
+      foldCount: 0,
       // Filled in below once we know how many top fogs there are.
       topSlot: 0,
       topCount: 1,
@@ -735,11 +773,22 @@ export function edgeFogs(
 
   // Assign side-by-side slots to the top-band fogs (task 23.4), in a stable
   // order, so several active ambient sounds without a side never stack on top
-  // of each other. Side fogs keep slot 0 of a single-slot band.
-  const topFogs = merged.filter((f) => f.edge === 'top');
+  // of each other. A FOLDED fog (task 25.3) no longer paints a band — it is a
+  // corner chip — so it is excluded from the top-band slotting and instead
+  // gets a fold slot so several settled occurrences stack in the corner
+  // without overlapping. Side fogs keep slot 0 of a single-slot band.
+  const topFogs = merged.filter((f) => f.edge === 'top' && !f.folded);
   topFogs.forEach((f, i) => {
     f.topSlot = i;
     f.topCount = topFogs.length;
+  });
+  const foldedFogs = merged.filter((f) => f.folded);
+  foldedFogs.forEach((f, i) => {
+    f.foldSlot = i;
+    f.foldCount = foldedFogs.length;
+    // A folded fog is a corner chip, not a band: it claims no top slot.
+    f.topSlot = 0;
+    f.topCount = 0;
   });
   return merged;
 }

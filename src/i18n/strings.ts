@@ -138,6 +138,17 @@ export interface Strings {
     missedListHeading: string;
     /** The "watch again" button on the end card. */
     watchAgain: string;
+    /** The "Compare" button on each end-card evidence row (task 25.5). */
+    compare: string;
+    /** The chip shown during the captions-only pass of a compare (task 25.5). */
+    compareCaptionsOnly: string;
+    /** The chip shown during the with-ghosts pass of a compare (task 25.5). */
+    compareWithGhosts: string;
+    /**
+     * The basis line under the end-card number for a demo clip with no subtitle
+     * file (task 25.7), spelling out that dialogue-only captions were assumed.
+     */
+    missedBasisDemoNoFile: string;
 
     // Event list columns/labels (Requirement 7.2).
     colTime: string;

@@ -33,10 +33,16 @@ import {
   chipStateFor,
   missedCount,
   latestMissedEvent,
-  formatClock,
 } from './settings.ts';
-import { missedOccurrences, missedBasis } from '../events/occurrences.ts';
+import { missedOccurrences, missedBasis, occurrenceTimeLabel } from '../events/occurrences.ts';
 import { occurrenceNoun } from '../i18n/soundLabel.ts';
+import {
+  comparePlan,
+  comparePhaseAt,
+  comparePlaybackTime,
+  compareOverlayVisible,
+  type ComparePhase,
+} from './compare.ts';
 
 export interface PlayerProps {
   /** Object URL for the local media; created and revoked by the parent. */
@@ -44,6 +50,18 @@ export interface PlayerProps {
   track: EventTrack;
   /** Dialogue subtitle cues to show in the caption band (task 19.2). */
   dialogue?: readonly DialogueCue[];
+  /**
+   * Optional end point (seconds) for a short demo (task 25.6): playback treats
+   * reaching this as the end (pauses, shows the end card) and the counter and
+   * end card count only occurrences before it. Omitted for user files.
+   */
+  endAt?: number | undefined;
+  /**
+   * Whether this clip is a bundled demo with no subtitle file (task 25.7): the
+   * end-card basis line then spells out that dialogue-only captions were
+   * assumed. Ignored when a subtitle file is loaded.
+   */
+  isDemo?: boolean | undefined;
   settings: Settings;
   /** UI strings for the status chip (task 21.2). */
   strings: Strings;
@@ -72,6 +90,8 @@ export function Player({
   src,
   track,
   dialogue,
+  endAt,
+  isDemo,
   settings,
   strings,
   onOpenShowWhen,
@@ -120,6 +140,15 @@ export function Player({
   dialogueRef.current = dialogue ?? [];
   const onTimeRef = useRef<PlayerProps['onTimeUpdate']>(onTimeUpdate);
   onTimeRef.current = onTimeUpdate;
+
+  // Compare run state (task 25.5): when the viewer clicks Compare on an
+  // evidence row, we play the window around that occurrence twice — once with
+  // the overlay hidden ("Captions only"), once with it shown ("With Ghost
+  // Captions") — then return to the end card. The pure state machine lives in
+  // `compare.ts`; here we only hold the active run and surface the current
+  // chip. The draw loop reads `compareRef` to override the overlay target.
+  const [comparePhase, setComparePhase] = useState<ComparePhase | null>(null);
+  const compareRef = useRef<{ plan: ReturnType<typeof comparePlan>; startWall: number } | null>(null);
 
   // Show-when state (task 21.1/21.2): whether the video is currently silent to
   // the viewer (muted or zero volume), driven by the `volumechange` event (no
@@ -189,7 +218,18 @@ export function Player({
     const onSeeking = () => {
       if (!video.ended) setEnded(false);
     };
-    const onTime = () => setVideoTime(video.currentTime);
+    const onTime = () => {
+      // A short demo ends at `endAt` (task 25.6): treat reaching it as the end
+      // of the clip — pause, clamp the time, and show the end card. Seeking
+      // back before endAt (onSeeking/onPlaying) clears `ended` as usual.
+      if (endAt != null && video.currentTime >= endAt) {
+        if (!video.paused) video.pause();
+        setVideoTime(endAt);
+        setEnded(true);
+        return;
+      }
+      setVideoTime(video.currentTime);
+    };
     video.addEventListener('ended', onEnded);
     video.addEventListener('play', onPlaying);
     video.addEventListener('playing', onPlaying);
@@ -202,7 +242,7 @@ export function Player({
       video.removeEventListener('seeking', onSeeking);
       video.removeEventListener('timeupdate', onTime);
     };
-  }, [src]);
+  }, [src, endAt]);
 
   // Hide the status chip 2 s after it was last shown, unless the pointer is
   // over the player (handled by the hover handlers below) (task 21.2).
@@ -279,7 +319,18 @@ export function Player({
       const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const dt = lastFrameWallRef.current ? (now - lastFrameWallRef.current) / 1000 : 0;
       lastFrameWallRef.current = now;
-      const target = overlayShouldShow(s.showWhen, silentRef.current) ? 1 : 0;
+      // During a compare run the overlay follows the compare phase, not the
+      // show-when/mute state (task 25.5): hidden in the captions-only pass,
+      // shown in the with-ghosts pass. Otherwise it follows show-when (task 21).
+      const run = compareRef.current;
+      let target: number;
+      if (run) {
+        const elapsed = (now - run.startWall) / 1000;
+        const phase = comparePhaseAt(elapsed, run.plan);
+        target = compareOverlayVisible(phase) ? 1 : 0;
+      } else {
+        target = overlayShouldShow(s.showWhen, silentRef.current) ? 1 : 0;
+      }
       const fadeSeconds = ghostConfig.overlayFadeSeconds.value;
       const step = fadeSeconds > 0 ? dt / fadeSeconds : 1;
       const current = overlayAlphaRef.current;
@@ -338,24 +389,31 @@ export function Player({
   // overlay visibility (task 21): when the sound overlay is resting they hide.
   const overlayVisible = overlayShouldShow(settings.showWhen, silent);
   const dialogueCues = dialogue ?? [];
-  const missed = missedCount(track.events, videoTime, settings, dialogueCues);
+  // The effective end of the clip (task 25.6): a short demo ends at `endAt`,
+  // otherwise the clip's full duration. Counting and the evidence list use it
+  // so a trimmed demo never counts sounds past its end.
+  const effectiveEnd = endAt != null ? Math.min(endAt, track.duration) : track.duration;
+  const countTime = Math.min(videoTime, effectiveEnd);
+  const missed = missedCount(track.events, countTime, settings, dialogueCues);
   // The newest missed sound's name, for the brief "+1 <sound>" flash.
-  const newest = latestMissedEvent(track.events, videoTime, settings, dialogueCues);
+  const newest = latestMissedEvent(track.events, countTime, settings, dialogueCues);
   const newestNoun = newest ? soundNoun(newest, strings, settings.lang) : '';
   const missedText = strings.ui.missedCount.replace('{n}', String(missed));
   const plusOneText = strings.ui.missedPlusOne.replace('{sound}', newestNoun);
   const endCardText = strings.ui.missedEndCard.replace('{n}', String(missed));
-  // The basis line under the end-card number (task 23.2): dialogue-only or
-  // against the loaded subtitle file.
+  // The basis line under the end-card number (tasks 23.2, 25.7): with a loaded
+  // file, say so; with no file, a demo spells out that dialogue-only captions
+  // were assumed (task 25.7), any other clip keeps the short dialogue-only line.
   const basisText =
     missedBasis(dialogueCues) === 'withFile'
       ? strings.ui.missedBasisWithFile
-      : strings.ui.missedBasisDialogueOnly;
-  // The evidence list on the end card (task 23.3): every counted occurrence in
-  // the clip, one row each with its time, family sprite and label. Computed at
-  // the clip's full duration so the card lists all counted sounds, not only
-  // those before the pause point.
-  const evidence = missedOccurrences(track.events, track.duration, settings, dialogueCues);
+      : isDemo
+        ? strings.ui.missedBasisDemoNoFile
+        : strings.ui.missedBasisDialogueOnly;
+  // The evidence list on the end card (task 23.3): every counted occurrence up
+  // to the clip's effective end (task 25.6), one row each with its time span,
+  // family sprite and label.
+  const evidence = missedOccurrences(track.events, effectiveEnd, settings, dialogueCues);
 
   // When the count rises, show "+1 <sound>" briefly and give the chip one
   // gentle scale pulse (none under reduced motion) (task 22.5). A reset to a
@@ -399,6 +457,57 @@ export function Player({
     const played = video.play() as Promise<void> | undefined;
     if (played && typeof played.catch === 'function') played.catch(() => {});
   };
+
+  // Start a Compare run for an occurrence (task 25.5): play the window around
+  // it twice (captions-only, then with ghosts) then return to the end card. The
+  // pure state machine in `compare.ts` decides the phase and the playback time;
+  // this effect just drives the video and the chip from a wall clock, then
+  // restores the end card. Starting a run leaves the end card (so the video is
+  // visible) and ends it by re-showing the card.
+  const compareTick = useRef<number>(0);
+  const startCompare = (start: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const plan = comparePlan(start);
+    compareRef.current = { plan, startWall: (typeof performance !== 'undefined' ? performance.now() : Date.now()) };
+    setEnded(false);
+    setComparePhase('captionsOnly');
+    const step = () => {
+      const run = compareRef.current;
+      const v = videoRef.current;
+      if (!run || !v) return;
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const elapsed = (now - run.startWall) / 1000;
+      const phase = comparePhaseAt(elapsed, run.plan);
+      if (phase === 'done') {
+        // Finished: stop the run, pause and return to the end card.
+        compareRef.current = null;
+        setComparePhase(null);
+        v.pause();
+        setEnded(true);
+        return;
+      }
+      setComparePhase(phase);
+      // Keep the playback head inside the window; wrap back to the start for the
+      // second pass. Seeking only when the drift is large avoids fighting normal
+      // playback.
+      const want = comparePlaybackTime(elapsed, run.plan);
+      if (Math.abs(v.currentTime - want) > 0.4) v.currentTime = want;
+      const played = v.play() as Promise<void> | undefined;
+      if (played && typeof played.catch === 'function') played.catch(() => {});
+      compareTick.current = requestAnimationFrame(step);
+    };
+    // Seek to the window start and begin.
+    video.currentTime = plan.from;
+    compareTick.current = requestAnimationFrame(step);
+  };
+  // Stop any compare run when the player unmounts.
+  useEffect(() => {
+    return () => {
+      if (compareTick.current) cancelAnimationFrame(compareTick.current);
+      compareRef.current = null;
+    };
+  }, []);
 
   return (
     <div
@@ -444,6 +553,17 @@ export function Player({
         {chipText}
       </button>
 
+      {/* Compare chip (task 25.5): during a Compare run, name the pass — first
+          "Captions only" (overlay hidden), then "With Ghost Captions" (overlay
+          shown). Text carries the meaning, not only the state. */}
+      {comparePhase && (
+        <div className="player__compare-chip" role="status" aria-live="polite">
+          {comparePhase === 'captionsOnly'
+            ? strings.ui.compareCaptionsOnly
+            : strings.ui.compareWithGhosts}
+        </div>
+      )}
+
       {/* "Sounds the captions missed" counter (task 22.5): top-right, inside
           the player so it shows in full screen too. It follows the show-when
           overlay visibility, and becomes a centred end card when the video
@@ -469,13 +589,13 @@ export function Player({
                 {evidence.map((occ) => {
                   const label = occurrenceNoun(occ, strings, settings.lang);
                   return (
-                    <li key={`${occ.group}-${occ.start}`}>
+                    <li key={`${occ.group}-${occ.start}`} className="player__endcard-item">
                       <button
                         type="button"
                         className="player__endcard-row"
                         onClick={() => seekToOccurrence(occ.start)}
                       >
-                        <span className="player__endcard-time">{formatClock(occ.start)}</span>
+                        <span className="player__endcard-time">{occurrenceTimeLabel(occ)}</span>
                         <img
                           className="player__endcard-sprite"
                           src={spriteImageUrl(occ.family)}
@@ -485,6 +605,13 @@ export function Player({
                           height={20}
                         />
                         <span className="player__endcard-label">{label}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="player__endcard-compare"
+                        onClick={() => startCompare(occ.start)}
+                      >
+                        {strings.ui.compare}
                       </button>
                     </li>
                   );

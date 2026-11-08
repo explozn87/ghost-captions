@@ -8,6 +8,7 @@ import {
   missedOccurrences,
   missedBasis,
   isShownEvent,
+  occurrenceTimeLabel,
 } from '../src/events/occurrences.ts';
 import type { DialogueCue, Family, SoundEvent } from '../src/shared/types.ts';
 
@@ -37,11 +38,14 @@ function ev(over: Partial<SoundEvent> = {}): SoundEvent {
 
 const noMute = { mutedFamilies: new Set<Family>() };
 
-describe('occurrences: group key (task 23.1)', () => {
-  it('folds all music families into one "music" group', () => {
+describe('occurrences: group key (task 23.1, 25.1)', () => {
+  it('folds the two instrumental music families into one "music" group', () => {
     expect(groupKey('tenseMusic')).toBe('music');
     expect(groupKey('calmMusic')).toBe('music');
-    expect(groupKey('singing')).toBe('music');
+  });
+
+  it('choir/singing is its own group again (task 25.1), not folded into music', () => {
+    expect(groupKey('singing')).toBe('singing');
   });
 
   it('every non-music family is its own group', () => {
@@ -52,17 +56,27 @@ describe('occurrences: group key (task 23.1)', () => {
 });
 
 describe('occurrences: grouping (task 23.1)', () => {
-  it('folds touching same-family events into one occurrence', () => {
+  it('folds touching instrumental-music events into one occurrence', () => {
     const events = [
       ev({ id: 'a', family: 'calmMusic', start: 10, end: 11 }),
       ev({ id: 'b', family: 'tenseMusic', start: 11, end: 12 }),
-      ev({ id: 'c', family: 'singing', start: 12.5, end: 14 }),
+      ev({ id: 'c', family: 'tenseMusic', start: 12.5, end: 14 }),
     ];
     const occ = occurrences(events, noMute);
     expect(occ).toHaveLength(1);
     expect(occ[0]!.group).toBe('music');
     expect(occ[0]!.start).toBe(10);
     expect(occ[0]!.end).toBe(14);
+  });
+
+  it('a singing/choir event stays its own occurrence beside music (task 25.1)', () => {
+    const events = [
+      ev({ id: 'a', family: 'calmMusic', start: 10, end: 12 }),
+      ev({ id: 'c', family: 'singing', start: 10.5, end: 13 }),
+    ];
+    const occ = occurrences(events, noMute);
+    expect(occ).toHaveLength(2);
+    expect(new Set(occ.map((o) => o.group))).toEqual(new Set(['music', 'singing']));
   });
 
   it('keeps two same-family events far apart as separate occurrences', () => {
@@ -196,5 +210,25 @@ describe('occurrences: missedOccurrences up to time t (task 23.1/23.2)', () => {
     expect(missedOccurrences(events, 14, noMute, dialogue).some((o) => o.group === 'gunshot')).toBe(false);
     // The wind and music are still counted.
     expect(missedOccurrences(events, 14, noMute, dialogue).length).toBe(2);
+  });
+});
+
+
+describe('occurrenceTimeLabel: spans in the evidence (task 25.1)', () => {
+  it('shows a span when the occurrence lasts 3 s or more', () => {
+    expect(occurrenceTimeLabel({ start: 10, end: 52 })).toBe('0:10\u20130:52');
+  });
+
+  it('shows only the start when the occurrence is shorter than 3 s', () => {
+    expect(occurrenceTimeLabel({ start: 9, end: 10 })).toBe('0:09');
+  });
+
+  it('rounds to the nearest second, not floored (a 9.6 s start reads 0:10)', () => {
+    expect(occurrenceTimeLabel({ start: 9.6, end: 10.1 })).toBe('0:10');
+  });
+
+  it('rounds both ends of a span to the nearest second', () => {
+    // 10.4 → 0:10, 52.6 → 0:53, span >= 3 s so a range is shown.
+    expect(occurrenceTimeLabel({ start: 10.4, end: 52.6 })).toBe('0:10\u20130:53');
   });
 });

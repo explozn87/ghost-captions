@@ -120,6 +120,11 @@ export const ko: Strings = {
     missedBasisWithFile: '불러온 자막과 대조했습니다.',
     missedListHeading: '센 소리',
     watchAgain: '다시 보기',
+    compare: '비교해 보기',
+    compareCaptionsOnly: '자막만',
+    compareWithGhosts: '소리의 유령과 함께',
+    missedBasisDemoNoFile:
+      '이 데모에는 자막 파일이 없어, 대사만 적힌 자막을 가정하고 셌습니다.',
 
     colTime: '시간',
     colSound: '소리',

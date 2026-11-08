@@ -30,8 +30,14 @@
 import type { DialogueCue, Family, SoundEvent } from '../shared/types.ts';
 import { ghostConfig, type GhostConfig } from '../config/ghost.config.ts';
 
-/** The music families that count as one group for occurrence grouping (task 23.1). */
-const MUSIC_FAMILIES: ReadonlySet<Family> = new Set<Family>(['tenseMusic', 'calmMusic', 'singing']);
+/**
+ * The music families that count as one group for occurrence grouping. Choir and
+ * singing are deliberately NOT here (task 25.1): a sung/choir sound is drawn as
+ * its own ghost (`singing` is a point family), so folding it into "music" hid a
+ * ghost that was on screen from the evidence list. Only the two instrumental
+ * music families share the "music" group.
+ */
+const MUSIC_FAMILIES: ReadonlySet<Family> = new Set<Family>(['tenseMusic', 'calmMusic']);
 
 /**
  * The grouping key for a family (task 23.1): all music families share the
@@ -232,4 +238,31 @@ export function missedOccurrences(
  */
 export function missedBasis(dialogue: readonly DialogueCue[]): 'dialogueOnly' | 'withFile' {
   return dialogue.length > 0 ? 'withFile' : 'dialogueOnly';
+}
+
+/** A time in seconds as `M:SS`, rounded to the nearest second (task 25.1). */
+function clockRounded(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const m = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${m}:${String(ss).padStart(2, '0')}`;
+}
+
+/**
+ * The time prefix for an end-card evidence row (task 25.1): a SPAN
+ * ("0:10–0:52") when the occurrence lasts `evidenceSpanMinSec` or more, else
+ * just its start ("0:09"). Times are rounded to the nearest second of the first
+ * moment the sound is shown, not floored, so a sound at 9.6 s reads "0:10"
+ * rather than "0:09". Pure, so the end card and its tests share one function.
+ */
+export function occurrenceTimeLabel(
+  occ: Pick<Occurrence, 'start' | 'end'>,
+  cfg: GhostConfig = ghostConfig,
+): string {
+  const span = occ.end - occ.start;
+  const start = clockRounded(occ.start);
+  if (span >= cfg.evidenceSpanMinSec.value) {
+    return `${start}\u2013${clockRounded(occ.end)}`;
+  }
+  return start;
 }

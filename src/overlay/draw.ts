@@ -722,6 +722,25 @@ function drawEdgeFog(
   const W = ctx.canvas.width;
   const H = ctx.canvas.height;
   const topH = H * (1 - captionBand);
+
+  // A FOLDED ambient occurrence (task 25.3) is a small chip in the top-left
+  // corner — sprite at 40% of the band-sprite size plus its plain name — and
+  // paints no band, so the centre of the top edge stays free for in-video
+  // titles. Several folded fogs stack downward without overlapping.
+  if (fog.folded) {
+    const chipRadius = baseRadiusFrac() * 0.5 * minDim * 0.4;
+    const margin = 8;
+    const slotH = chipRadius * 2 + 8;
+    const cx = margin + chipRadius;
+    const cy = margin + chipRadius + fog.foldSlot * slotH;
+    drawAmbientSprite(ctx, fog.family, cx, cy, chipRadius, AMBIENT_SPRITE_MIN_OPACITY, loader);
+    // The chip's label sits to the right of the sprite; its plate is placed by
+    // placeLabels like any other (so it never leaves the frame or overlaps).
+    const labelCX = cx + chipRadius + 2;
+    const labelTop = cy - LABEL_FONT_PX / 2 - LABEL_PAD_Y;
+    return [measureLabel(ctx, fog.label, labelCX + 40, labelTop, 1, false)];
+  }
+
   // Side band width: half of the cleared-centre complement, so left+right
   // together leave the central FOG_CLEAR_CENTRE untouched.
   const sideFrac = (1 - FOG_CLEAR_CENTRE) / 2;
@@ -988,15 +1007,27 @@ function drawGhost(
 }
 
 /**
+ * The opacity floor at which a ghost/chip is still "visible at all" (task
+ * 25.4): when its sprite opacity is at or above this, its label plate is drawn
+ * at FULL opacity (the text must stay readable even while the ghost image is
+ * dimmed by the face band or a fade). Below it the whole label is skipped.
+ */
+export const LABEL_VISIBLE_FLOOR = 0.15;
+
+/**
  * Draw a label on a dark backing plate so it meets WCAG AA contrast over any
  * video (Req 6.4, 10.2), at the plate rectangle `placeLabels` resolved (tasks
- * 22.1, 22.2). The plate is near-opaque dark with near-white text (contrast
- * ratio > 12:1); `opacity` fades the whole label with its ghost/fog while
- * keeping the contrast ratio (plate and text fade together).
+ * 22.1, 22.2).
+ *
+ * Task 25.4 — the plate and text are drawn at FULL opacity whenever the ghost
+ * or chip is visible at all (`opacity >= LABEL_VISIBLE_FLOOR`), on a darker
+ * near-opaque plate (rgba 8,10,16,0.94). Only the ghost IMAGE dims (face band,
+ * fades), never the text plate, so a label is never drawn at a washed-out alpha
+ * (measured defect: the vehicle label at 7.3 s was drawn at alpha 0.55). Below
+ * the floor the label is omitted entirely with its ghost.
  */
 function drawLabelAt(ctx: Ctx2D, label: string, rect: LabelRect, opacity: number, bold = false): void {
-  const a = clamp01(opacity);
-  if (a <= 0) return;
+  if (clamp01(opacity) < LABEL_VISIBLE_FLOOR) return;
   ctx.save();
   ctx.font = `${bold ? 'bold ' : ''}${LABEL_FONT_PX}px sans-serif`;
   ctx.textAlign = 'center';
@@ -1004,8 +1035,8 @@ function drawLabelAt(ctx: Ctx2D, label: string, rect: LabelRect, opacity: number
   const plateX = rect.x - rect.w / 2;
   const plateY = rect.y;
 
-  ctx.globalAlpha = a;
-  ctx.fillStyle = 'rgba(12,14,20,0.9)';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(8,10,16,0.94)';
   ctx.fillRect(plateX, plateY, rect.w, rect.h);
 
   ctx.fillStyle = 'rgba(240,242,248,1)';

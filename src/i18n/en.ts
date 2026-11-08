@@ -121,6 +121,11 @@ export const en: Strings = {
     missedBasisWithFile: 'Counted against the subtitles you loaded.',
     missedListHeading: 'Sounds counted',
     watchAgain: 'Watch again',
+    compare: 'Compare',
+    compareCaptionsOnly: 'Captions only',
+    compareWithGhosts: 'With Ghost Captions',
+    missedBasisDemoNoFile:
+      'This demo has no subtitle file, so we counted against captions that contain dialogue only.',
 
     colTime: 'Time',
     colSound: 'Sound',

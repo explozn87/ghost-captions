@@ -795,3 +795,79 @@ describe('edgeFogs: one fog per occurrence (task 24.1)', () => {
     expect(fogs.every((f) => f.topCount === 2)).toBe(true);
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// Task 25.2: trend words are transient.
+// ---------------------------------------------------------------------------
+
+describe('spriteLabel: transient trend word (task 25.2)', () => {
+  const s = tables.en;
+
+  it('includes the trend word within trendLabelSec of the event start', () => {
+    const ev = makeEvent({ family: 'footsteps', side: 'left', trend: 'rising', start: 10, end: 30 });
+    const within = spriteLabel(ev, s, 'en', 11); // 1 s in, within the 3 s window
+    expect(within).toContain(s.trend.rising);
+  });
+
+  it('drops the trend word after trendLabelSec, leaving the plain name', () => {
+    const ev = makeEvent({ family: 'footsteps', side: 'left', trend: 'rising', start: 10, end: 30 });
+    const after = spriteLabel(ev, s, 'en', 10 + ghostConfig.trendLabelSec.value + 1);
+    expect(after).not.toContain(s.trend.rising);
+    // The name and the direction word remain.
+    expect(after).toContain(s.family.footsteps);
+    expect(after).toContain(s.side.left);
+  });
+
+  it('always includes the trend when no time is given (the WebVTT export path)', () => {
+    const ev = makeEvent({ family: 'footsteps', trend: 'falling', start: 10, end: 30 });
+    expect(spriteLabel(ev, s)).toContain(s.trend.falling);
+  });
+
+  it('the layout label drops the trend word late in the event', () => {
+    const vp: Viewport = { width: 1000, height: 1000 };
+    const ev = makeEvent({ family: 'footsteps', side: 'centre-unknown', trend: 'rising', start: 0, end: 30 });
+    const early = layout([ev], 1, vp, defaultSettings)[0]!;
+    const late = layout([ev], 20, vp, defaultSettings)[0]!;
+    expect(early.label).toContain(tables.en.trend.rising);
+    expect(late.label).not.toContain(tables.en.trend.rising);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 25.3: settled ambient folds away into a corner chip.
+// ---------------------------------------------------------------------------
+
+describe('edgeFogs: settled ambient folds to a corner chip (task 25.3)', () => {
+  it('a steady ambient event folds once past settleSec', () => {
+    const ev = makeEvent({ family: 'wind', side: 'left', start: 0, end: 60, loudness: 0.8, trend: 'steady' });
+    const before = edgeFogs([ev], 1, defaultSettings)[0]!;
+    const after = edgeFogs([ev], ghostConfig.settleSec.value + 2, defaultSettings)[0]!;
+    expect(before.folded).toBe(false);
+    expect(after.folded).toBe(true);
+  });
+
+  it('a rising ambient event never folds', () => {
+    const ev = makeEvent({ family: 'wind', side: 'left', start: 0, end: 60, loudness: 0.8, trend: 'rising' });
+    expect(edgeFogs([ev], ghostConfig.settleSec.value + 5, defaultSettings)[0]!.folded).toBe(false);
+  });
+
+  it('folded fogs leave the top band and stack in distinct fold slots', () => {
+    const a = makeEvent({ id: 'a', family: 'wind', side: 'centre-unknown', start: 0, end: 60, loudness: 0.8, trend: 'steady' });
+    const b = makeEvent({ id: 'b', family: 'rain', side: 'centre-unknown', start: 0, end: 60, loudness: 0.8, trend: 'steady' });
+    const fogs = edgeFogs([a, b], ghostConfig.settleSec.value + 2, defaultSettings);
+    expect(fogs.every((f) => f.folded)).toBe(true);
+    // No folded fog counts toward the top-band slotting.
+    expect(fogs.every((f) => f.topCount === 0)).toBe(true);
+    // Folded fogs stack in the corner with distinct fold slots.
+    expect(fogs.every((f) => f.foldCount === 2)).toBe(true);
+    expect(new Set(fogs.map((f) => f.foldSlot)).size).toBe(2);
+  });
+
+  it('a merged fog folds only when every member has folded (a fresh member unfolds it)', () => {
+    const steady = makeEvent({ id: 's', family: 'wind', side: 'left', start: 0, end: 60, loudness: 0.8, trend: 'steady' });
+    const fresh = makeEvent({ id: 'f', family: 'wind', side: 'left', start: 9.5, end: 40, loudness: 0.8, trend: 'rising' });
+    const merged = edgeFogs([steady, fresh], 10, defaultSettings)[0]!;
+    expect(merged.folded).toBe(false);
+  });
+});

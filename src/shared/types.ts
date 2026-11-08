@@ -220,6 +220,22 @@ export interface EdgeFog {
    */
   settled: boolean;
   /**
+   * True once an ambient occurrence has been steady past the longer
+   * `settleSec` (task 25.3): it folds away into a small corner chip (sprite at
+   * 40% + plain name) in the top-left and its band is no longer painted, so the
+   * centre of the top edge is free for in-video titles. A new loudness rise
+   * unfolds it (back to a band). `draw` reads this to switch between band and
+   * chip.
+   */
+  folded: boolean;
+  /**
+   * The stacking index among the folded corner chips active at this instant,
+   * and the count of them, so `draw` can stack several settled occurrences in
+   * the top-left corner without overlapping (task 25.3).
+   */
+  foldSlot: number;
+  foldCount: number;
+  /**
    * Slot index among the top-band fogs active at this instant (task 23.4), so
    * `draw` can place several `top` fogs side by side without overlapping, and
    * the count of such fogs so each can take an equal share of the band.

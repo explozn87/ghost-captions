@@ -79,12 +79,21 @@ a { color: var(--accent); }
    text, keyboard reachable; more than 8 rows scroll inside the card. */
 .player__endcard-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px;
   max-height: calc(8 * 34px); overflow-y: auto; width: min(32ch, 80vw); justify-self: center; }
-.player__endcard-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+.player__endcard-row { display: flex; align-items: center; gap: 10px; flex: 1; text-align: left;
   padding: 5px 10px; }
+.player__endcard-item { display: flex; align-items: stretch; gap: 6px; }
+.player__endcard-compare { flex: none; font-size: .8rem; padding: 4px 10px; }
 .player__endcard-time { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 3.5ch; }
 .player__endcard-sprite { flex: none; object-fit: contain; }
 .player__endcard-label { flex: 1; }
 .player__endcard-again { justify-self: center; margin-top: 4px; }
+
+/* Compare chip (task 25.5): names the current pass during a Compare run —
+   "Captions only" then "With Ghost Captions". Centred near the top so it reads
+   over the picture; text carries the meaning. */
+.player__compare-chip { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 3;
+  font-size: .9rem; background: rgba(15,17,21,.88); border: 1px solid var(--accent); color: var(--text);
+  border-radius: 999px; padding: 5px 14px; }
 
 @media (prefers-reduced-motion: reduce) {
   .player__missed--pulse { animation: none; }

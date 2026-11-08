@@ -121,11 +121,13 @@ describe('latestMissedEvent (task 22.5)', () => {
 
 describe('missedCount counts occurrences, not raw events (task 23.1)', () => {
   it('folds same-family touching events into one count', () => {
-    // Music split into three touching pieces (the Sintel defect) counts once.
+    // Instrumental music split into three touching pieces (the Sintel defect)
+    // counts once. Choir/singing is its own group now (task 25.1), so it is
+    // kept out of this fold.
     const music: SoundEvent[] = [
       ev({ id: 'm1', family: 'calmMusic', start: 10, end: 12 }),
       ev({ id: 'm2', family: 'tenseMusic', start: 12, end: 13 }),
-      ev({ id: 'm3', family: 'singing', start: 13, end: 14 }),
+      ev({ id: 'm3', family: 'tenseMusic', start: 13, end: 14 }),
     ];
     expect(missedCount(music, 14, noMute)).toBe(1);
   });

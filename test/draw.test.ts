@@ -131,6 +131,9 @@ function fog(over: Partial<EdgeFog> = {}): EdgeFog {
     textureDensity: 0.5,
     spriteScale: 1,
     settled: false,
+    folded: false,
+    foldSlot: 0,
+    foldCount: 0,
     topSlot: 0,
     topCount: 1,
     arriving: false,
@@ -213,20 +216,63 @@ describe('draw: edge fog for ambient events (task 16.3)', () => {
     const texts = ctx.calls.filter((c) => c.op === 'fillText');
     expect(texts).toHaveLength(0);
   });
+
+  it('a folded fog draws a small corner chip, not a full top band (task 25.3)', () => {
+    const ctx = makeFakeCtx(1000, 1000);
+    draw(ctx, [], [fog({ edge: 'left', folded: true, foldSlot: 0, foldCount: 1, label: 'wind' })], 0, false, {
+      loader: silhouetteOnlyLoader,
+    });
+    // No full-width band gradient rect (0,0,W,...) is painted for a folded fog.
+    const bandRect = ctx.calls.find(
+      (c) => c.op === 'fillRect' && c.args[0] === 0 && c.args[1] === 0 && c.args[2] === 1000,
+    );
+    expect(bandRect).toBeUndefined();
+    // The sprite (silhouette fill) and the label are still drawn, near the
+    // top-left corner.
+    const fills = ctx.calls.filter((c) => c.op === 'fill');
+    expect(fills.length).toBeGreaterThanOrEqual(1);
+    const text = ctx.calls.find((c) => c.op === 'fillText' && c.args[0] === 'wind');
+    expect(text).toBeDefined();
+    // The chip's label sits in the left portion of the frame.
+    expect(text!.args[1] as number).toBeLessThan(500);
+  });
 });
 
-describe('draw: label backing plate for contrast (task 8.2, Req 10.2)', () => {
+describe('draw: label backing plate for contrast (task 8.2, Req 10.2, 25.4)', () => {
   it('draws a dark plate then light text for each label', () => {
     const ctx = makeFakeCtx();
     draw(ctx, [sprite({ label: 'glass' })], [], 0, false, { loader: silhouetteOnlyLoader });
     const plate = ctx.calls.find(
-      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('12,14,20'),
+      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('8,10,16'),
     );
     const text = ctx.calls.find((c) => c.op === 'fillText');
     expect(plate).toBeDefined();
     expect(text).toBeDefined();
     expect(typeof text!.fillStyle === 'string' && text!.fillStyle.includes('240,242,248')).toBe(true);
     expect(text!.globalAlpha).toBe(1);
+  });
+
+  it('draws the label plate at full opacity even when the ghost image is dimmed (task 25.4)', () => {
+    // A dimmed ghost (face band / fade) carries a low sprite opacity, but its
+    // label plate and text must still be drawn at full alpha so the word stays
+    // readable. Measured defect: the vehicle label at 7.3 s was drawn at 0.55.
+    const ctx = makeFakeCtx();
+    draw(ctx, [sprite({ label: 'vehicle', opacity: 0.55 })], [], 0, false, { loader: silhouetteOnlyLoader });
+    const plate = ctx.calls.find(
+      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('8,10,16'),
+    );
+    const text = ctx.calls.find((c) => c.op === 'fillText' && c.args[0] === 'vehicle');
+    expect(plate).toBeDefined();
+    expect(plate!.globalAlpha).toBe(1);
+    expect(text).toBeDefined();
+    expect(text!.globalAlpha).toBe(1);
+  });
+
+  it('omits a label whose ghost is below the visibility floor (task 25.4)', () => {
+    const ctx = makeFakeCtx();
+    draw(ctx, [sprite({ label: 'faint', opacity: 0.05 })], [], 0, false, { loader: silhouetteOnlyLoader });
+    const text = ctx.calls.find((c) => c.op === 'fillText' && c.args[0] === 'faint');
+    expect(text).toBeUndefined();
   });
 });
 
@@ -705,7 +751,7 @@ describe('draw: labels placed as a group, clamped and non-overlapping (tasks 22.
     // The label plate is a fillRect with the dark plate colour; its right edge
     // (x + w) must be within the frame.
     const plate = ctx.calls.find(
-      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('12,14,20'),
+      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('8,10,16'),
     )!;
     const [px, , pw] = plate.args as number[];
     expect(px! + pw!).toBeLessThanOrEqual(W - EDGE_MARGIN + 1e-6);
@@ -723,7 +769,7 @@ describe('draw: labels placed as a group, clamped and non-overlapping (tasks 22.
       { loader: silhouetteOnlyLoader },
     );
     const plates = ctx.calls.filter(
-      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('12,14,20'),
+      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('8,10,16'),
     );
     expect(plates.length).toBe(2);
     const [x0, y0, w0, h0] = plates[0]!.args as number[];
