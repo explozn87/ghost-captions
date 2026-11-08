@@ -33,6 +33,17 @@ export interface OminousWeights {
 export interface GhostConfig {
   labelThreshold: Tuned;
   specificLabelThreshold: Tuned;
+  /**
+   * An unclassified (below-threshold) window becomes an `unknown` event only
+   * when its energy is in the clip's top `unknownEnergyPercentile` AND it holds
+   * an onset in the clip's top `unknownOnsetPercentile` (task 20.1). So an
+   * unknown ghost means "something loud and sudden happened that we cannot
+   * name", not "a quiet second we could not label" — which cuts the clutter of
+   * stray unknowns the live demo complained about.
+   */
+  unknownEnergyPercentile: Tuned;
+  /** The onset (flux) percentile an unclassified window must clear to become an unknown event (task 20.1). */
+  unknownOnsetPercentile: Tuned;
   mergeGap: Tuned;
   minDuration: Tuned;
   onsetKeepPercentile: Tuned;
@@ -120,6 +131,14 @@ export const ghostConfig = {
   specificLabelThreshold: {
     value: 0.3,
     why: 'The specific classifier label (e.g. "Wind", "Thunder") is shown in the ghost label, event list, timeline tooltip and WebVTT cue only when its score reaches 0.3; below it the label falls back to the broader family name. Set equal to labelThreshold so a window that was confident enough to earn a family is also confident enough to name the specific sound, while never naming an unknown event (task 15.1).',
+  },
+  unknownEnergyPercentile: {
+    value: 0.85,
+    why: 'An unclassified window becomes an unknown event only when its energy sits in the clip\'s top 15% (task 20.1). The live demo showed too many unknown ghosts for ordinary quiet seconds the classifier simply could not name; requiring top-15% loudness means an unknown ghost marks "something loud happened we cannot name", not background the viewer would not notice.',
+  },
+  unknownOnsetPercentile: {
+    value: 0.9,
+    why: 'Alongside the loudness gate, an unclassified window must also contain an onset in the clip\'s top 10% flux to become an unknown event (task 20.1), so unknown means loud AND sudden — a bang or crash we cannot name — rather than a steady unlabelled drone.',
   },
   mergeGap: {
     value: 0.5,

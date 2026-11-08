@@ -94,6 +94,8 @@ export const en: Strings = {
     sizeLarge: 'Large',
     muteFamily: 'Mute this sound',
     language: 'Language',
+    hideSoundTypes: 'Hide sound types',
+    showSoundList: 'Show sound list',
 
     addSubtitles: 'Add dialogue subtitles',
     replaceSubtitles: 'Replace dialogue subtitles',

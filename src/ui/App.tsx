@@ -241,6 +241,10 @@ function WatchScreen({
   const strings = t(settings.lang);
   const currentIndex = currentEventIndex(track.events, time);
   const subtitleInputRef = useRef<HTMLInputElement>(null);
+  // The settings panel is hidden behind a gear button by default (task 20.3):
+  // the watch screen shows only the video, the timeline and one row of
+  // buttons, keeping the "messy settings" of the live demo out of the way.
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
     <div className="watch">
@@ -278,6 +282,7 @@ function WatchScreen({
         onSeek={seek}
       />
 
+      {/* One row of buttons: Export, Add subtitles, Settings, About (task 20.3). */}
       <div className="watch__controls">
         <ExportButton
           track={track}
@@ -303,18 +308,37 @@ function WatchScreen({
             e.target.value = '';
           }}
         />
+        <button
+          type="button"
+          className="settings-button"
+          aria-expanded={showSettings}
+          aria-controls="settings-panel"
+          onClick={() => setShowSettings((v) => !v)}
+        >
+          <span aria-hidden="true">⚙ </span>
+          {strings.ui.settings}
+        </button>
         <AboutGhosts strings={strings} />
       </div>
 
-      <EventList
-        track={track}
-        strings={strings}
-        lang={settings.lang}
-        currentIndex={currentIndex}
-        onSeek={seek}
-      />
+      {/* Settings panel, shown only when the gear button is toggled on. */}
+      {showSettings && (
+        <div id="settings-panel">
+          <SettingsPanel strings={strings} settings={settings} onChange={onSettings} />
+        </div>
+      )}
 
-      <SettingsPanel strings={strings} settings={settings} onChange={onSettings} />
+      {/* The sound list is collapsed by default behind a disclosure (task 20.3). */}
+      <details className="watch__sound-list">
+        <summary>{strings.ui.showSoundList}</summary>
+        <EventList
+          track={track}
+          strings={strings}
+          lang={settings.lang}
+          currentIndex={currentIndex}
+          onSeek={seek}
+        />
+      </details>
     </div>
   );
 }

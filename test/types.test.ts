@@ -20,8 +20,8 @@ describe('shared types (task 2.1)', () => {
     >();
   });
 
-  it('FamilyOrSpeech adds the speech marker on top of Family', () => {
-    expectTypeOf<FamilyOrSpeech>().toEqualTypeOf<Family | 'speech'>();
+  it('FamilyOrSpeech adds the speech and silence markers on top of Family', () => {
+    expectTypeOf<FamilyOrSpeech>().toEqualTypeOf<Family | 'speech' | 'silence'>();
   });
 
   it('Side and Trend are the documented unions', () => {

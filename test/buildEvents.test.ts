@@ -412,6 +412,105 @@ describe('buildEvents: activeEvents (Req 6.1)', () => {
   });
 });
 
+describe('buildEvents: fewer unknowns (task 20.1)', () => {
+  it('drops a below-threshold window instead of making it an unknown event', () => {
+    // A single 0.975 s window whose best category is far below labelThreshold:
+    // no family clears the bar, so with the new rule the window is dropped, not
+    // turned into an unknown ghost. Flat, quiet frames keep it from being a
+    // loud+sudden unknown.
+    const win: ClassWindow[] = [{ start: 0, end: 0.975, categories: [{ name: 'Eruption', score: 0.2 }] }];
+    const fs = flatFrames(1.5, 0.01);
+    const track = buildEvents(win, fs, { duration: 1.5, mono: true, labelsAvailable: true });
+    expect(track.events.filter((e) => e.family === 'unknown')).toHaveLength(0);
+    expect(track.events).toHaveLength(0);
+  });
+
+  it('never makes an event from a Silence window (task 20.1)', () => {
+    const win: ClassWindow[] = [
+      { start: 0, end: 0.975, categories: [{ name: 'Silence', score: 0.9 }] },
+      { start: 1, end: 1.975, categories: [{ name: 'Silence', score: 0.8 }] },
+    ];
+    const fs = flatFrames(2.5);
+    const track = buildEvents(win, fs, { duration: 2.5, mono: true, labelsAvailable: true });
+    expect(track.events).toHaveLength(0);
+  });
+
+  it('creates an unknown event for a loud AND sudden unclassified window', () => {
+    // A below-threshold window over a sharp, loud noise burst: it is in the
+    // clip's top energy and top onset, so it becomes a single unknown event
+    // meaning "something loud and sudden we cannot name".
+    const win: ClassWindow[] = [{ start: 0.05, end: 1.02, categories: [{ name: 'Eruption', score: 0.2 }] }];
+    const { pcm } = synthesize(
+      [
+        { kind: 'noise', start: 0.1, end: 0.5, gain: 0.95 },
+        // a long quiet tail so the burst is clearly the clip's loudest, sharpest moment
+        { kind: 'tone', start: 1.5, end: 3.5, gain: 0.02, freq: 500 },
+      ],
+      { sampleRate: 16000, duration: 3.6, seed: 11 },
+    );
+    const fs = frames(pcm, opts);
+    const track = buildEvents(win, fs, { duration: 3.6, mono: true, labelsAvailable: true });
+    expect(track.events.filter((e) => e.family === 'unknown')).toHaveLength(1);
+    expect(track.events[0]!.topLabel).toBeNull(); // never a guessed label
+  });
+
+  it('does not make an unknown event for a loud but NOT sudden unclassified window', () => {
+    // A hand-built frame series makes the test exact: inside the unclassified
+    // window the energy is high (top 15%) but the flux is low (steady), while a
+    // region OUTSIDE the window carries the clip's sharp onsets (top flux). So
+    // the window is loud but not sudden and must NOT be promoted to an unknown
+    // event (task 20.1).
+    const win: ClassWindow[] = [
+      { start: 1.0, end: 1.975, categories: [{ name: 'Eruption', score: 0.2 }] },
+    ];
+    const step = 0.046;
+    const fs: Frame[] = [];
+    for (let t = 0; t < 8; t += step) {
+      const inWindow = t >= 1.0 && t < 1.975;
+      // Inside: loud and smooth. Outside: quiet, but with sharp flux spikes on
+      // alternate frames so the clip's top flux percentile sits far above the
+      // window's flux. The window is a small slice of a long clip, so its
+      // energy is firmly in the clip's top 15% (genuinely loud).
+      const energy = inWindow ? 1.0 : 0.05;
+      const flux = inWindow ? 0.05 : Math.round(t / step) % 2 === 0 ? 2.0 : 0.0;
+      fs.push({ t: Math.round(t * 1000) / 1000, energy, balance: 0, flux, lowShare: 0.2 });
+    }
+    const track = buildEvents(win, fs, { duration: 8, mono: true, labelsAvailable: true });
+    expect(track.events.filter((e) => e.family === 'unknown')).toHaveLength(0);
+  });
+});
+
+describe('buildEvents: merge across dropped low-score windows (task 20.2)', () => {
+  it('merges two same-family runs separated only by a dropped low-score window', () => {
+    const W = 0.975;
+    // music, music (dip below threshold), music — the middle window is a drop,
+    // yet the two confident music windows must end up as one event, not two.
+    const windows: ClassWindow[] = [
+      { start: 0, end: W, categories: [{ name: 'Music', score: 0.8 }] },
+      { start: W, end: 2 * W, categories: [{ name: 'Music', score: 0.2 }] }, // dropped
+      { start: 2 * W, end: 3 * W, categories: [{ name: 'Music', score: 0.9 }] },
+    ];
+    const fs = flatFrames(3 * W + 0.5);
+    const track = buildEvents(windows, fs, { duration: 3 * W + 0.5, mono: true, labelsAvailable: true });
+    const music = track.events.filter((e) => e.family === 'calmMusic');
+    expect(music).toHaveLength(1);
+    expect(music[0]!.start).toBeCloseTo(0, 6);
+    expect(music[0]!.end).toBeCloseTo(3 * W, 6);
+  });
+
+  it('does NOT merge across a real Silence window', () => {
+    const W = 0.975;
+    const windows: ClassWindow[] = [
+      { start: 0, end: W, categories: [{ name: 'Music', score: 0.8 }] },
+      { start: W, end: 2 * W, categories: [{ name: 'Silence', score: 0.9 }] }, // a true gap
+      { start: 2 * W, end: 3 * W, categories: [{ name: 'Music', score: 0.9 }] },
+    ];
+    const fs = flatFrames(3 * W + 0.5);
+    const track = buildEvents(windows, fs, { duration: 3 * W + 0.5, mono: true, labelsAvailable: true });
+    expect(track.events.filter((e) => e.family === 'calmMusic')).toHaveLength(2);
+  });
+});
+
 describe('buildEvents: Sintel fixture example tests (task 5.4)', () => {
   const windows = sintelWindows as ClassWindow[];
   // The Sintel run is audio we do not have the PCM for, so give it a flat,
@@ -448,6 +547,15 @@ describe('buildEvents: Sintel fixture example tests (task 5.4)', () => {
   it('builds fewer events than windows (merging happened)', () => {
     expect(track.events.length).toBeGreaterThan(0);
     expect(track.events.length).toBeLessThan(windows.length);
+  });
+
+  it('leaves at most 2 unknown events (task 20.1)', () => {
+    // With the new rule, below-threshold and Silence windows no longer become
+    // unknown ghosts; only loud+sudden unclassified windows do. The fixture's
+    // flat frame series makes none loud+sudden, so the honest outcome is a
+    // handful of named events and no stray unknowns.
+    const unknowns = track.events.filter((e) => e.family === 'unknown');
+    expect(unknowns.length).toBeLessThanOrEqual(2);
   });
 
   it('marks the Speech-bearing stretch with isSpeech somewhere', () => {

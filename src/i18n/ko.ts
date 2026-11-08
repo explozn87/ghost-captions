@@ -93,6 +93,8 @@ export const ko: Strings = {
     sizeLarge: '크게',
     muteFamily: '이 소리 숨기기',
     language: '언어',
+    hideSoundTypes: '소리 종류 숨기기',
+    showSoundList: '소리 목록 보기',
 
     addSubtitles: '대사 자막 추가',
     replaceSubtitles: '대사 자막 교체',

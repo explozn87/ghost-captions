@@ -440,20 +440,35 @@ export const familyMap: Record<string, FamilyOrSpeech> = {
   'Chink, clink': 'glass',
   'Shatter': 'glass',
   'Breaking': 'glass',
+
+  // --- silence: "no sound" categories that must never create an event ---
+  // (task 20.1). Silence is the absence of sound, so it can never be a ghost;
+  // mapping it explicitly keeps it out of the unknown-event path entirely.
+  'Silence': 'silence',
 };
 
 /**
  * The family for a classifier category name. Unmapped names fall back to
  * `unknown` (Req 3.5), and `familyFor` is what the rest of the pipeline calls.
- * Speech is reported separately via {@link isSpeechCategory}.
+ * Speech and silence are reported separately via {@link isSpeechCategory} and
+ * {@link isSilenceCategory}; `familyFor` never returns a ghost family for them.
  */
 export function familyFor(name: string): Family {
   const mapped = familyMap[name];
-  if (mapped === undefined || mapped === 'speech') return 'unknown';
+  if (mapped === undefined || mapped === 'speech' || mapped === 'silence') return 'unknown';
   return mapped;
 }
 
 /** True when the category is spoken words (shown as a speech marker, Req 3.2). */
 export function isSpeechCategory(name: string): boolean {
   return familyMap[name] === 'speech';
+}
+
+/**
+ * True when the category is a "no sound" category (Silence) that must never
+ * create an event (task 20.1). A window whose best cleared category is silence
+ * carries no ghost and no unknown event.
+ */
+export function isSilenceCategory(name: string): boolean {
+  return familyMap[name] === 'silence';
 }

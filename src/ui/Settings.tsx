@@ -109,24 +109,27 @@ export function SettingsPanel({
         </select>
       </label>
 
-      <fieldset className="settings__families">
-        <legend>{ui.muteFamily}</legend>
-        {FAMILIES.map((family) => (
-          <label key={family} className="settings__family">
-            <input
-              type="checkbox"
-              checked={settings.mutedFamilies.has(family)}
-              onChange={() =>
-                onChange({
-                  ...settings,
-                  mutedFamilies: toggleMuted(settings.mutedFamilies, family),
-                })
-              }
-            />
-            <span>{strings.family[family]}</span>
-          </label>
-        ))}
-      </fieldset>
+      <details className="settings__hide-sounds">
+        <summary>{ui.hideSoundTypes}</summary>
+        <fieldset className="settings__families">
+          <legend>{ui.muteFamily}</legend>
+          {FAMILIES.map((family) => (
+            <label key={family} className="settings__family">
+              <input
+                type="checkbox"
+                checked={settings.mutedFamilies.has(family)}
+                onChange={() =>
+                  onChange({
+                    ...settings,
+                    mutedFamilies: toggleMuted(settings.mutedFamilies, family),
+                  })
+                }
+              />
+              <span>{strings.family[family]}</span>
+            </label>
+          ))}
+        </fieldset>
+      </details>
     </section>
   );
 }

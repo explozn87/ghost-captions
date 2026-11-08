@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 // Vite serves the fixture as a raw string (?raw), so the test needs no Node
 // type declarations — it stays in the jsdom/browser-shaped environment.
 import csvText from './fixtures/yamnet_class_map.csv?raw';
-import { familyFor, isSpeechCategory, familyMap } from '../src/events/familyMap.ts';
+import { familyFor, isSpeechCategory, isSilenceCategory, familyMap } from '../src/events/familyMap.ts';
 import type { Family } from '../src/shared/types.ts';
 
 // Task 2.3: every name in the bundled YAMNet label list must be mapped — i.e.
@@ -68,7 +68,7 @@ const INTENTIONAL_UNKNOWN: ReadonlySet<string> = new Set<string>([
   'Scratch', 'Scrape', 'Rub', 'Roll', 'Crushing', 'Crumpling, crinkling',
   'Tearing', 'Beep, bleep', 'Ping', 'Ding', 'Clang', 'Squeal', 'Creak',
   'Rustle', 'Whir', 'Clatter', 'Sizzle', 'Clicking', 'Clickety-clack',
-  'Rumble', 'Plop', 'Hum', 'Zing', 'Crunch', 'Silence', 'Sine wave',
+  'Rumble', 'Plop', 'Hum', 'Zing', 'Crunch', 'Sine wave',
   'Harmonic', 'Chirp tone', 'Sound effect', 'Pulse', 'Inside, small room',
   'Inside, large room or hall', 'Inside, public space', 'Outside, urban or manmade',
   'Outside, rural or natural', 'Reverberation', 'Echo', 'Noise',
@@ -88,15 +88,26 @@ describe('familyMap coverage (task 2.3)', () => {
   it('resolves every name to a valid family or the speech marker', () => {
     for (const name of names) {
       if (isSpeechCategory(name)) continue; // speech is a valid resolution
+      if (isSilenceCategory(name)) continue; // silence is a valid resolution (task 20.1)
       expect(FAMILIES.has(familyFor(name))).toBe(true);
     }
   });
 
   it('leaves only the intentionally-unknown names as unknown', () => {
     const unexpectedUnknown = names.filter(
-      (n) => !isSpeechCategory(n) && familyFor(n) === 'unknown' && !INTENTIONAL_UNKNOWN.has(n),
+      (n) =>
+        !isSpeechCategory(n) &&
+        !isSilenceCategory(n) &&
+        familyFor(n) === 'unknown' &&
+        !INTENTIONAL_UNKNOWN.has(n),
     );
     expect(unexpectedUnknown).toEqual([]);
+  });
+
+  it('maps Silence to the silence marker, never a ghost family (task 20.1)', () => {
+    expect(isSilenceCategory('Silence')).toBe(true);
+    expect(familyFor('Silence')).toBe('unknown'); // never returns a ghost for silence
+    expect(isSpeechCategory('Silence')).toBe(false);
   });
 
   it('does not list a name as intentionally-unknown that is actually mapped', () => {

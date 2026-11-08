@@ -91,6 +91,10 @@ export interface Strings {
     sizeLarge: string;
     muteFamily: string;
     language: string;
+    /** Disclosure label for the per-family hide toggles inside Settings (task 20.3). */
+    hideSoundTypes: string;
+    /** Disclosure label that reveals the collapsed sound list on the watch screen (task 20.3). */
+    showSoundList: string;
 
     // Dialogue subtitles (task 19).
     /** Button to add a subtitle file after the video (task 19.1). */

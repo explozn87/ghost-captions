@@ -71,7 +71,11 @@ describe('app shell end to end (fake classifier)', () => {
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(input, { target: { files: [makeFile()] } });
 
-    // After analysis we reach the watch screen with an event list.
+    // The watch screen keeps the sound list collapsed by default (task 20.3);
+    // open the "Show sound list" disclosure to read the event table.
+    const showList = await screen.findByText('Show sound list');
+    fireEvent.click(showList);
+
     const table = await screen.findByRole('table');
     const rows = within(table).getAllByRole('row');
     // Header row + at least the footsteps and impact events.
@@ -134,12 +138,14 @@ describe('app shell end to end (fake classifier)', () => {
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(input, { target: { files: [makeFile()] } });
 
-    await screen.findByRole('table');
+    // Open the Settings panel, now hidden behind the gear button (task 20.3).
+    const settingsBtn = await screen.findByRole('button', { name: /Settings/ });
+    fireEvent.click(settingsBtn);
 
     const langSelect = screen.getByDisplayValue('English') as HTMLSelectElement;
     fireEvent.change(langSelect, { target: { value: 'ko' } });
 
-    // The app title switches to the Korean string.
+    // The language switcher now shows the Korean option as selected.
     await waitFor(() => expect(screen.getByDisplayValue('한국어')).toBeInTheDocument());
   });
 
@@ -148,7 +154,7 @@ describe('app shell end to end (fake classifier)', () => {
     const intakeInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(intakeInput, { target: { files: [makeFile()] } });
 
-    await screen.findByRole('table');
+    await screen.findByRole('button', { name: 'Add dialogue subtitles' });
 
     // Add a subtitle after the video, via the subtitle file input.
     const srt = ['1', '00:00:00,500 --> 00:00:02,500', 'Who is there?', ''].join('\n');
@@ -179,5 +185,31 @@ describe('app shell end to end (fake classifier)', () => {
     // Both the dialogue line (verbatim) and a bracketed sound cue are present.
     expect(text).toContain('Who is there?');
     expect(text).toContain('[Walk, footsteps, from the left]');
+  });
+
+  it('hides settings and the sound list by default, revealing them on demand (task 20.3)', async () => {
+    const { container } = render(
+      <App decode={decodeSynthetic} classifier={scriptedClassifier()} initialLang="en" />,
+    );
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [makeFile()] } });
+
+    // The watch screen's one button row: Export, Add subtitles, Settings, About.
+    await screen.findByRole('button', { name: 'Export captions' });
+    expect(screen.getByRole('button', { name: 'Add dialogue subtitles' })).toBeInTheDocument();
+    const settingsBtn = screen.getByRole('button', { name: /Settings/ });
+
+    // The sound list is collapsed by default: its <details> is not open.
+    const soundList = container.querySelector('details.watch__sound-list') as HTMLDetailsElement;
+    expect(soundList).toBeTruthy();
+    expect(soundList.open).toBe(false);
+    fireEvent.click(screen.getByText('Show sound list'));
+    expect(soundList.open).toBe(true);
+
+    // The settings panel (with the language control) is absent until the gear
+    // button toggles it on.
+    expect(screen.queryByDisplayValue('English')).toBeNull();
+    fireEvent.click(settingsBtn);
+    expect(screen.getByDisplayValue('English')).toBeInTheDocument();
   });
 });

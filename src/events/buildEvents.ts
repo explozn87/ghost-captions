@@ -29,13 +29,29 @@ import type {
   Trend,
 } from '../shared/types.ts';
 import { ghostConfig, type GhostConfig } from '../config/ghost.config.ts';
-import { familyFor, isSpeechCategory } from './familyMap.ts';
+import { familyFor, isSpeechCategory, isSilenceCategory } from './familyMap.ts';
 import { percentile } from '../measure/frames.ts';
 
-/** How a single window was classified before merging. */
+/**
+ * How a single window was classified before merging (task 20.1). `kind` tells
+ * the merge step what to do with the window:
+ *   - `family`: a confident ghost family (best score >= labelThreshold);
+ *   - `speech`: spoken words (shown as a speech marker, never a ghost);
+ *   - `drop`: an unclassified window that is NOT loud+sudden — it never makes
+ *     an event on its own, but same-family runs may merge across it (task
+ *     20.2), and a lone one is simply dropped (no more default unknowns);
+ *   - `silence`: a "no sound" category — dropped, and it does NOT bridge a
+ *     merge (a true gap of silence should split two events).
+ * A `drop` window that is both loud and sudden is promoted to an `unknown`
+ * family window by the caller before merging, so unknown means "something loud
+ * and sudden we cannot name" (task 20.1).
+ */
+type WindowKind = 'family' | 'speech' | 'drop' | 'silence';
+
 interface WindowLabel {
   start: number;
   end: number;
+  kind: WindowKind;
   family: Family;
   isSpeech: boolean;
   /** Top category name once the threshold is cleared, else null. */
@@ -52,15 +68,23 @@ const BEAT_MAX_PERIOD = 1.5;
 /**
  * Step 1 — assign each window a family. The best-scoring category that maps to
  * a real family and clears `labelThreshold` wins; speech categories are noted
- * on `isSpeech` but never become a family (Req 3.2); otherwise the window is
- * `unknown` with no label (Req 3.5).
+ * on `isSpeech` but never become a family (Req 3.2); a "no sound" category
+ * (Silence) marks the window `silence` (task 20.1). Otherwise the window is
+ * unclassified: it is marked `drop` and does NOT become an `unknown` event by
+ * default (task 20.1) — the caller promotes it to `unknown` only when it is
+ * loud and sudden.
  */
 function labelWindow(window: ClassWindow, cfg: GhostConfig): WindowLabel {
   const threshold = cfg.labelThreshold.value;
   let best: { name: string; score: number; family: Family } | null = null;
   let sawSpeech = false;
+  let sawSilence = false;
 
   for (const c of window.categories) {
+    if (isSilenceCategory(c.name)) {
+      if (c.score >= threshold) sawSilence = true;
+      continue;
+    }
     if (isSpeechCategory(c.name)) {
       if (c.score >= threshold) sawSpeech = true;
       continue;
@@ -73,14 +97,29 @@ function labelWindow(window: ClassWindow, cfg: GhostConfig): WindowLabel {
     }
   }
 
-  // A window that cleared the threshold only for speech is a speech window; it
-  // carries no ghost family (family stays unknown but isSpeech is true).
-  if (best === null) {
+  // A confident ghost family wins outright.
+  if (best !== null) {
     return {
       start: window.start,
       end: window.end,
-      family: 'unknown',
+      kind: 'family',
+      family: best.family,
       isSpeech: sawSpeech,
+      topLabel: best.name,
+      labelScore: best.score,
+    };
+  }
+
+  // No family cleared the threshold. Speech (with no competing family) is a
+  // speech marker; a dominant Silence is a no-sound window; everything else is
+  // an unclassified `drop` window (task 20.1).
+  if (sawSpeech) {
+    return {
+      start: window.start,
+      end: window.end,
+      kind: 'speech',
+      family: 'unknown',
+      isSpeech: true,
       topLabel: null,
       labelScore: 0,
     };
@@ -89,11 +128,49 @@ function labelWindow(window: ClassWindow, cfg: GhostConfig): WindowLabel {
   return {
     start: window.start,
     end: window.end,
-    family: best.family,
-    isSpeech: sawSpeech,
-    topLabel: best.name,
-    labelScore: best.score,
+    kind: sawSilence ? 'silence' : 'drop',
+    family: 'unknown',
+    isSpeech: false,
+    topLabel: null,
+    labelScore: 0,
   };
+}
+
+/**
+ * Promote the unclassified `drop` windows that are both loud and sudden into
+ * `unknown` family windows (task 20.1): energy in the clip's top
+ * `unknownEnergyPercentile` AND an onset in the clip's top
+ * `unknownOnsetPercentile`. This is what makes "unknown" mean "something loud
+ * and sudden we cannot name", cutting the stray unknowns the live demo showed.
+ * Returns a new array; silence/speech/family windows pass through unchanged.
+ */
+function promoteLoudUnknowns(
+  labels: WindowLabel[],
+  frames: Frame[],
+  cfg: GhostConfig,
+): WindowLabel[] {
+  const energyThreshold = percentile(
+    frames.map((f) => f.energy),
+    cfg.unknownEnergyPercentile.value,
+  );
+  const onsetThreshold = percentile(
+    frames.map((f) => f.flux),
+    cfg.unknownOnsetPercentile.value,
+  );
+
+  return labels.map((w) => {
+    if (w.kind !== 'drop') return w;
+    const inWindow = framesInSpan(frames, w.start, w.end);
+    if (inWindow.length === 0) return w;
+    // "Loud" compares the window's peak energy to the clip's high percentile;
+    // "sudden" wants a single onset frame above the clip's high flux percentile.
+    const loud = inWindow.some((f) => f.energy > energyThreshold);
+    const sudden = inWindow.some((f) => f.flux > onsetThreshold);
+    if (loud && sudden) {
+      return { ...w, kind: 'family', family: 'unknown' };
+    }
+    return w;
+  });
 }
 
 /** A run of merged windows of one family, before per-event measurement. */
@@ -108,27 +185,54 @@ interface MergedRun {
 
 /**
  * Step 2 — merge consecutive windows that share a family when the gap between
- * them is within `mergeGap` (Req 3.3). Speech windows are merged on their own
- * so a speech marker is one span, not many. Unknown windows also merge, so a
- * stretch of unclassifiable sound is one unknown ghost rather than a flicker.
- * The run's `topLabel` is the single highest-scoring category across ALL the
- * windows merged into it, not the first or last window's label (task 16.2), so
- * a sustained sound is named by its clearest moment.
+ * them is within `mergeGap` (Req 3.3). Only `family` and `speech` windows make
+ * runs; `drop` windows (unclassified, not loud+sudden) and `silence` windows
+ * make none.
+ *
+ * Two refinements for task 20:
+ *   - the run's `topLabel` is the single highest-scoring category across ALL
+ *     the windows merged into it (task 16.2), so a sustained sound is named by
+ *     its clearest moment;
+ *   - adjacent same-family runs separated ONLY by `drop` windows are merged
+ *     into one event (task 20.2), so a stretch of music whose odd second dips
+ *     below the label threshold does not flicker into many short events. A
+ *     `silence` window is a real gap and is NOT bridged; nor is a window of a
+ *     different family.
  */
 function mergeRuns(labels: WindowLabel[], cfg: GhostConfig): MergedRun[] {
   const gap = cfg.mergeGap.value;
   const runs: MergedRun[] = [];
+  // Whether at least one droppable (unclassified) window has passed since the
+  // last real run — if so, a following same-family window may bridge across
+  // them (task 20.2). A silence window or a run of a different family resets it
+  // to false (a true gap, or a genuine family change, should not be bridged).
+  let bridgeable = false;
 
   for (const w of labels) {
+    if (w.kind === 'drop') {
+      // Unclassified non-event window: it does not start a run, but it keeps a
+      // same-family bridge open so the next same-family window can merge back.
+      bridgeable = true;
+      continue;
+    }
+    if (w.kind === 'silence') {
+      // A real gap of silence closes any bridge so two events stay separate.
+      bridgeable = false;
+      continue;
+    }
+
     const last = runs[runs.length - 1];
     const sameKind = last && last.family === w.family && last.isSpeech === w.isSpeech;
-    const closeEnough = last && w.start - last.end <= gap;
+    // Bridge either when the raw gap is within mergeGap OR when only droppable
+    // windows separated the two same-family runs (task 20.2).
+    const closeEnough = last && (w.start - last.end <= gap || bridgeable);
     if (last && sameKind && closeEnough) {
       last.end = Math.max(last.end, w.end);
       if (w.labelScore > last.labelScore) {
         last.topLabel = w.topLabel;
         last.labelScore = w.labelScore;
       }
+      bridgeable = false;
       continue;
     }
     runs.push({
@@ -139,6 +243,9 @@ function mergeRuns(labels: WindowLabel[], cfg: GhostConfig): MergedRun[] {
       topLabel: w.topLabel,
       labelScore: w.labelScore,
     });
+    // A fresh run starts clean: the next bridge must be opened by a new drop
+    // window, not inherited from before this run.
+    bridgeable = false;
   }
 
   return runs;
@@ -396,8 +503,11 @@ export function buildEvents(
   const clipPeakFlux = fluxValues.reduce((m, v) => Math.max(m, v), 0);
   const energiesSorted = frames.map((f) => f.energy).sort((a, b) => a - b);
 
-  // Steps 1–2.
-  const labels = windows.map((w) => labelWindow(w, cfg));
+  // Steps 1–2. A below-threshold window no longer becomes an unknown event by
+  // default (task 20.1): it is labelled `drop` and only promoted to an
+  // `unknown` family when it is loud and sudden; silence is never an event.
+  const rawLabels = windows.map((w) => labelWindow(w, cfg));
+  const labels = promoteLoudUnknowns(rawLabels, frames, cfg);
   const runs = mergeRuns(labels, cfg);
 
   const events: SoundEvent[] = [];

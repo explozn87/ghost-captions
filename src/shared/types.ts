@@ -36,10 +36,11 @@ export type Family =
 
 /**
  * The outcome of mapping a single classifier category name. A category maps
- * either to a ghost {@link Family} or to the special `'speech'` marker
- * (Requirement 3.2). Used by `familyMap.ts` (task 2.3).
+ * either to a ghost {@link Family}, to the special `'speech'` marker
+ * (Requirement 3.2), or to the `'silence'` marker for "no sound" categories
+ * that must never create an event (task 20.1). Used by `familyMap.ts`.
  */
-export type FamilyOrSpeech = Family | 'speech';
+export type FamilyOrSpeech = Family | 'speech' | 'silence';
 
 /**
  * Where a sound came from. `centre-unknown` means the side could not be

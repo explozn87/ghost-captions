@@ -103,7 +103,7 @@ export function toWebVtt(
   // cues are the spoken words verbatim. A stable secondary sort on end time,
   // then source (sound before dialogue), keeps the output deterministic so the
   // property test can assert ordering (P5).
-  interface Row { start: number; end: number; text: string; kind: 0 | 1 }
+  interface Row { start: number; end: number; text: string; kind: 0 | 1; seq: number }
   const rows: Row[] = [];
 
   for (const event of track.events) {
@@ -113,6 +113,7 @@ export function toWebVtt(
       end: Math.max(event.end, event.start),
       text: cueText(event, s, lang),
       kind: 0, // sound
+      seq: rows.length,
     });
   }
   for (const cue of dialogue) {
@@ -121,10 +122,22 @@ export function toWebVtt(
       end: Math.max(cue.end, cue.start),
       text: cue.text,
       kind: 1, // dialogue
+      seq: rows.length,
     });
   }
 
-  rows.sort((a, b) => a.start - b.start || a.end - b.end || a.kind - b.kind);
+  // Sort by start, then source kind (sound before dialogue), then the original
+  // insertion order. We deliberately do NOT break ties on `end`: two sound
+  // events that share a start but differ in duration must keep the order the
+  // start-sorted event track produced them in, so each emitted cue still lines
+  // up with its source event and its direction phrase (P5). Sorting on `end`
+  // would reorder such a pair and misalign the direction phrases. The `kind`
+  // key keeps a sound cue before a dialogue cue at the same instant, and the
+  // final `seq` tiebreaker preserves insertion order for everything else, so
+  // the output stays deterministic.
+  rows.sort(
+    (a, b) => a.start - b.start || a.kind - b.kind || a.seq - b.seq,
+  );
 
   let index = 0;
   for (const row of rows) {
