@@ -32,3 +32,7 @@ motion uses the same images without drift or tremble.
 
 This fallback is covered by `test/draw.test.ts` with a fake image loader, so the
 app works with or without the PNGs present.
+
+## Credits
+
+20 PNGs (512x512, transparent) generated 2026-11-08 by Elsa (team Codex seat, built-in image generation tool; model name not reported). Redistribution rights depend on the image service terms: confirm before public release.
