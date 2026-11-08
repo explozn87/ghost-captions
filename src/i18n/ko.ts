@@ -126,6 +126,7 @@ export const ko: Strings = {
     compareCaptionsOnlyPlate: '자막만 — 이 장면의 자막에는 이 소리가 없습니다.',
     compareStep: '{step}/{total}',
     tryThisFirst: '먼저 눌러 보세요',
+    compareFirst: '먼저 비교해 보기',
     missedBasisDemoNoFile:
       '이 데모에는 자막 파일이 없어, 대사만 적힌 자막을 가정하고 셌습니다.',
 

@@ -931,3 +931,25 @@ describe('edgeFogs: settle/fold measured per occurrence (task 26.2)', () => {
     expect(edgeFogs([steady, rise], t, defaultSettings)[0]!.folded).toBe(true);
   });
 });
+
+describe('edgeFogs: a long-running ambient event stays visible up to endAt (task 28.4)', () => {
+  it('still emits a fog for a music span that runs past the trim point', () => {
+    // A music occurrence from 11 s to 52 s (like the Sintel demo): with a 25 s
+    // trim, playback stops at 25 s and the counter never moves past it, so the
+    // event is still active at the frame drawn at (just before) 25 s. Its fog —
+    // a band or, once settled, a folded corner chip — must still be produced so
+    // the music label stays on screen until endAt, not vanish at 23.5 s.
+    const music = makeEvent({
+      family: 'calmMusic',
+      start: 11,
+      end: 52,
+      loudness: 0.6,
+      ominous: 0.3,
+    });
+    const fogs = edgeFogs([music], 24.5, defaultSettings);
+    expect(fogs).toHaveLength(1);
+    expect(fogs[0]!.family).toBe('calmMusic');
+    // Its label still names the sound (it never becomes empty).
+    expect(fogs[0]!.label.length).toBeGreaterThan(0);
+  });
+});

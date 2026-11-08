@@ -127,6 +127,7 @@ export const en: Strings = {
     compareCaptionsOnlyPlate: 'Captions only — these captions say nothing about this sound.',
     compareStep: '{step}/{total}',
     tryThisFirst: 'Try this first',
+    compareFirst: 'Compare this first',
     missedBasisDemoNoFile:
       'This demo has no subtitle file, so we counted against captions that contain dialogue only.',
 

@@ -34,6 +34,7 @@ import {
   chipStateFor,
   missedCount,
   latestMissedEvent,
+  formatClock,
 } from './settings.ts';
 import { missedOccurrences, missedBasis, occurrenceTimeLabel } from '../events/occurrences.ts';
 import { occurrenceNoun } from '../i18n/soundLabel.ts';
@@ -435,13 +436,17 @@ export function Player({
   // so a trimmed demo never counts sounds past its end.
   const effectiveEnd = endAt != null ? Math.min(endAt, track.duration) : track.duration;
   const countTime = Math.min(videoTime, effectiveEnd);
+  // The app's own time/progress readout spans 0..effectiveEnd (task 28.4): a
+  // trimmed demo reads its endAt as the duration, a user file its full length.
+  const displayDuration = effectiveEnd;
+  const progressPct =
+    displayDuration > 0 ? Math.min(100, Math.max(0, (videoTime / displayDuration) * 100)) : 0;
   const missed = missedCount(track.events, countTime, settings, dialogueCues);
   // The newest missed sound's name, for the brief "+1 <sound>" flash.
   const newest = latestMissedEvent(track.events, countTime, settings, dialogueCues);
   const newestNoun = newest ? soundNoun(newest, strings, settings.lang) : '';
   const missedText = strings.ui.missedCount.replace('{n}', String(missed));
   const plusOneText = strings.ui.missedPlusOne.replace('{sound}', newestNoun);
-  const endCardText = strings.ui.missedEndCard.replace('{n}', String(missed));
   // The basis line under the end-card number (tasks 23.2, 25.7): with a loaded
   // file, say so; with no file, a demo spells out that dialogue-only captions
   // were assumed (task 25.7), any other clip keeps the short dialogue-only line.
@@ -459,6 +464,13 @@ export function Player({
   const evidence = missedOccurrences(track.events, effectiveEnd, settings, dialogueCues).map((o) =>
     o.end > effectiveEnd ? { ...o, end: effectiveEnd } : o,
   );
+
+  // The end-card headline count is derived from the SAME occurrence list the
+  // card shows (task 28.2), never from the live counter at the current
+  // playback position: after a Compare run seeks the head back into the clip,
+  // the live `missed` count would fall, but the card still lists every
+  // occurrence up to the clip's end, so the number and the rows must agree.
+  const endCardText = strings.ui.missedEndCard.replace('{n}', String(evidence.length));
 
   // The one obvious first click (task 27.2): the loudest POINT occurrence in
   // the evidence list (ambient sounds are atmosphere, a point sound like the
@@ -586,7 +598,11 @@ export function Player({
   const primaryCompareRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     if (ended && overlayVisible && firstTryIndex >= 0) {
-      primaryCompareRef.current?.focus();
+      // `preventScroll` so moving focus to the primary button does not scroll
+      // the evidence list and cut row 1 off at the top (task 28.1). Scroll
+      // padding on the list is the belt-and-braces fallback where the browser
+      // ignores the option.
+      primaryCompareRef.current?.focus({ preventScroll: true });
     }
   }, [ended, overlayVisible, firstTryIndex]);
 
@@ -669,7 +685,7 @@ export function Player({
           the player so it shows in full screen too. It follows the show-when
           overlay visibility, and becomes a centred end card when the video
           ends. Information is in text, not only motion. */}
-      {overlayVisible && !ended && (
+      {overlayVisible && !ended && comparePhase !== 'captionsOnly' && (
         <div
           className={`player__missed${pulse ? ' player__missed--pulse' : ''}`}
           role="status"
@@ -697,37 +713,46 @@ export function Player({
                         isFirstTry ? ' player__endcard-item--first' : ''
                       }`}
                     >
-                      <button
-                        type="button"
-                        className="player__endcard-row"
-                        onClick={() => seekToOccurrence(occ.start)}
-                      >
-                        <span className="player__endcard-time">{occurrenceTimeLabel(occ)}</span>
-                        <img
-                          className="player__endcard-sprite"
-                          src={spriteImageUrl(occ.family)}
-                          alt=""
-                          aria-hidden="true"
-                          width={20}
-                          height={20}
-                        />
-                        <span className="player__endcard-label">{label}</span>
-                        {isFirstTry && (
-                          <span className="player__endcard-firsttag">
-                            {strings.ui.tryThisFirst}
-                          </span>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        ref={isFirstTry ? primaryCompareRef : undefined}
-                        className={`player__endcard-compare${
-                          isFirstTry ? ' player__endcard-compare--primary' : ''
-                        }`}
-                        onClick={() => startCompare(occ.start)}
-                      >
-                        {strings.ui.compare}
-                      </button>
+                      {/* The "Try this first" tag sits on its own line ABOVE the
+                          row, not in the label column (task 28.1): squeezed next
+                          to the Compare button it forced the Korean label
+                          ("총성, 오른쪽에서") to wrap letter by letter and made the
+                          row 169 px tall. */}
+                      {isFirstTry && (
+                        <span className="player__endcard-firsttag">
+                          {strings.ui.tryThisFirst}
+                        </span>
+                      )}
+                      <div className="player__endcard-rowline">
+                        <button
+                          type="button"
+                          className="player__endcard-row"
+                          onClick={() => seekToOccurrence(occ.start)}
+                        >
+                          <span className="player__endcard-time">{occurrenceTimeLabel(occ)}</span>
+                          <img
+                            className="player__endcard-sprite"
+                            src={spriteImageUrl(occ.family)}
+                            alt=""
+                            aria-hidden="true"
+                            width={20}
+                            height={20}
+                          />
+                          <span className="player__endcard-label">{label}</span>
+                        </button>
+                        <button
+                          type="button"
+                          ref={isFirstTry ? primaryCompareRef : undefined}
+                          className={`player__endcard-compare${
+                            isFirstTry ? ' player__endcard-compare--primary' : ''
+                          }`}
+                          onClick={() => startCompare(occ.start)}
+                        >
+                          {isFirstTry
+                            ? `\u25B6 ${strings.ui.compareFirst}`
+                            : strings.ui.compare}
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
@@ -739,6 +764,23 @@ export function Player({
           </button>
         </div>
       )}
+
+      {/* The app's own time display and progress bar (task 28.4). The native
+          <video> controls show the whole file's duration (0:52 for the Sintel
+          demo); this strip instead spans 0..endAt for a trimmed demo, so the
+          time, the end card and the timeline all agree that the clip is 25 s.
+          For a user file with no endAt it spans the full duration. */}
+      <div className="player__progress" aria-hidden="true">
+        <div className="player__progress-track">
+          <div
+            className="player__progress-fill"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+        <span className="player__progress-time">
+          {formatClock(Math.min(videoTime, displayDuration))} / {formatClock(displayDuration)}
+        </span>
+      </div>
     </div>
   );
 }

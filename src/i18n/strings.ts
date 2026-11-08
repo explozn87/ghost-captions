@@ -155,6 +155,12 @@ export interface Strings {
     /** The "Try this first" tag on the loudest end-card evidence row (task 27.2). */
     tryThisFirst: string;
     /**
+     * The primary Compare button's label on the loudest evidence row (task
+     * 28.1): the "Try this first" meaning lives here (e.g. "▶ Compare this
+     * first") so it no longer crowds the label column next to the button.
+     */
+    compareFirst: string;
+    /**
      * The basis line under the end-card number for a demo clip with no subtitle
      * file (task 25.7), spelling out that dialogue-only captions were assumed.
      */

@@ -158,6 +158,17 @@ function fireEnded(video: HTMLVideoElement) {
   });
 }
 
+/**
+ * Click the loudest point occurrence's primary Compare button. Since task 28.1
+ * the primary row reads "▶ Compare this first" (not "Compare"), so this names
+ * it directly rather than taking the first "Compare" button.
+ */
+function clickPrimaryCompare(strings: ReturnType<typeof t>) {
+  act(() => {
+    screen.getByRole('button', { name: `▶ ${strings.ui.compareFirst}` }).click();
+  });
+}
+
 describe('Player missed-sounds counter (task 22.5)', () => {
   it('shows the running count, rising as non-speech events start, speech excluded', () => {
     const strings = t('en');
@@ -238,9 +249,12 @@ describe('Player end-card evidence, compare, endAt (tasks 25.1, 25.5, 25.6, 25.7
     const video = getVideo();
     setTime(video, 10);
     fireEnded(video);
-    // Two counted occurrences → two Compare buttons.
-    const compares = screen.getAllByRole('button', { name: strings.ui.compare });
-    expect(compares).toHaveLength(2);
+    // Two counted occurrences → two Compare buttons: the loudest point row's
+    // primary "Compare this first" (task 28.1) and the other row's "Compare".
+    expect(
+      screen.getByRole('button', { name: `▶ ${strings.ui.compareFirst}` }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: strings.ui.compare })).toHaveLength(1);
   });
 
   it('a demo with no subtitle file spells out the dialogue-only basis (task 25.7)', () => {
@@ -281,9 +295,7 @@ describe('Player end-card evidence, compare, endAt (tasks 25.1, 25.5, 25.6, 25.7
     const video = getVideo();
     setTime(video, 10);
     fireEnded(video);
-    act(() => {
-      screen.getAllByRole('button', { name: strings.ui.compare })[0]!.click();
-    });
+    clickPrimaryCompare(strings);
     expect(screen.getByText(strings.ui.compareCaptionsOnly)).toBeInTheDocument();
   });
 });
@@ -311,9 +323,7 @@ describe('Player compare & first-click (tasks 27.1, 27.2)', () => {
     const video = getVideo();
     setTime(video, 10);
     fireEnded(video);
-    act(() => {
-      screen.getAllByRole('button', { name: strings.ui.compare })[0]!.click();
-    });
+    clickPrimaryCompare(strings);
     // No subtitle file loaded, so the generic plate line is shown.
     expect(screen.getByText(strings.ui.compareCaptionsOnlyPlate)).toBeInTheDocument();
   });
@@ -334,9 +344,7 @@ describe('Player compare & first-click (tasks 27.1, 27.2)', () => {
     setTime(video, 10);
     fireEnded(video);
     // Compare the gunshot (start 1 s): a cue covers it, so its text shows.
-    act(() => {
-      screen.getAllByRole('button', { name: strings.ui.compare })[0]!.click();
-    });
+    clickPrimaryCompare(strings);
     expect(screen.getByText('Hello there')).toBeInTheDocument();
     expect(screen.queryByText(strings.ui.compareCaptionsOnlyPlate)).toBeNull();
   });
@@ -350,8 +358,107 @@ describe('Player compare & first-click (tasks 27.1, 27.2)', () => {
     setTime(video, 10);
     fireEnded(video);
     act(() => {
-      screen.getAllByRole('button', { name: strings.ui.compare })[0]!.click();
+      screen.getByRole('button', { name: `▶ ${strings.ui.compareFirst}` }).click();
     });
     expect(screen.getByText(strings.ui.compareCaptionsOnlyPlate)).toBeInTheDocument();
+  });
+});
+
+// --- Task 28: the first click is clean and the numbers agree ---------------
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+/** The project's stylesheet, read as text so CSS rules can be asserted. */
+const appCss = readFileSync(join(process.cwd(), 'src/ui/app.css'), 'utf8');
+
+describe('Player end-card first row (task 28.1)', () => {
+  it('renders the "Try this first" tag OUTSIDE the label column', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    // The tag exists, and it is not nested inside any `.player__endcard-label`:
+    // squeezed into the label column it forced the Korean label to wrap letter
+    // by letter and made the row 169 px tall (task 28.1).
+    const tag = screen.getByText(strings.ui.tryThisFirst);
+    expect(tag).toBeInTheDocument();
+    expect(tag.closest('.player__endcard-label')).toBeNull();
+  });
+
+  it('CSS gives the end-card label word-break: keep-all (task 28.1)', () => {
+    // The raw stylesheet is loaded as text (Vite `?raw`); the label rule must
+    // let the label wrap only at word boundaries. Match the declaration block
+    // for `.player__endcard-label` and assert it carries `word-break: keep-all`.
+    expect(appCss.length).toBeGreaterThan(0);
+    const m = appCss.match(/\.player__endcard-label\s*\{([^}]*)\}/);
+    expect(m).not.toBeNull();
+    expect(m![1]).toMatch(/word-break:\s*keep-all/);
+  });
+});
+
+describe("Player end-card headline count (task 28.2)", () => {
+  it('derives the headline from the evidence list, not the live counter', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    // End the clip while the playhead is BEFORE the second occurrence: the live
+    // counter would be 1, but the end card lists every occurrence up to the
+    // clip's end, so the headline and the rows must both be 2 (task 28.2).
+    setTime(video, 1.5); // only the gunshot (t=1) has started
+    fireEnded(video);
+    expect(screen.getByText('Captions would have missed 2 sounds in this clip.')).toBeInTheDocument();
+    // The number equals the number of rendered evidence rows.
+    const rows = screen.getAllByRole('button', { name: /Compare/ });
+    expect(rows).toHaveLength(2);
+  });
+});
+
+describe('Player missed counter during compare (task 28.3)', () => {
+  it('hides the missed-sounds counter during the captions-only pass', () => {
+    const strings = t('en');
+    const { container } = render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    // Start a compare: it opens in the captions-only pass.
+    clickPrimaryCompare(strings);
+    expect(screen.getByText(strings.ui.compareCaptionsOnly)).toBeInTheDocument();
+    // The counter chip is hidden while "Captions only" is on screen (task 28.3).
+    expect(container.querySelector('.player__missed')).toBeNull();
+  });
+});
+
+describe('Player time display spans endAt (task 28.4)', () => {
+  it('shows endAt as the duration, not the clip length', () => {
+    const strings = t('en');
+    render(
+      <Player
+        src="blob:mock"
+        track={soundTrack}
+        settings={settingsWith('auto')}
+        strings={strings}
+        endAt={3}
+        isDemo
+      />,
+    );
+    // The clip is 20 s but the demo is trimmed to 3 s: the readout reads 0:03.
+    expect(screen.getByText('0:00 / 0:03')).toBeInTheDocument();
+  });
+
+  it('a user file with no endAt shows the full duration', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    // track.duration is 20 s.
+    expect(screen.getByText('0:00 / 0:20')).toBeInTheDocument();
   });
 });

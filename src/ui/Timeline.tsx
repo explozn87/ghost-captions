@@ -22,6 +22,13 @@ export interface TimelineProps {
   lang: Lang;
   /** Index of the current event in `track.events`, or -1. */
   currentIndex: number;
+  /**
+   * Optional end point (seconds) for a trimmed demo (task 28.4): the strip
+   * spans 0..endAt and shows no mark at or after endAt, so a trimmed demo is
+   * trimmed everywhere (the end card, the counter and the timeline agree). User
+   * files pass nothing and the strip spans the whole clip.
+   */
+  endAt?: number | undefined;
   onSeek: (seconds: number) => void;
 }
 
@@ -30,9 +37,14 @@ export function Timeline({
   strings,
   lang,
   currentIndex,
+  endAt,
   onSeek,
 }: TimelineProps): JSX.Element {
-  const duration = Math.max(track.duration, 0.001);
+  // The strip spans up to the effective end: a trimmed demo ends at `endAt`,
+  // otherwise the whole clip (task 28.4). Marks are positioned against this
+  // span so the last visible mark sits inside the strip, not past its edge.
+  const effectiveEnd = endAt != null ? Math.min(endAt, track.duration) : track.duration;
+  const duration = Math.max(effectiveEnd, 0.001);
   const s = tables[lang] ?? tables.en;
 
   return (
@@ -40,6 +52,9 @@ export function Timeline({
       <ol className="timeline__marks">
         {track.events.map((event, i) => {
           if (event.isSpeech) return null;
+          // Drop marks at or after the effective end: a trimmed demo shows no
+          // occurrence button past the point where the viewer stops (task 28.4).
+          if (endAt != null && event.start >= effectiveEnd) return null;
           const leftPct = (event.start / duration) * 100;
           const label = spriteLabel(event, s, lang);
           return (

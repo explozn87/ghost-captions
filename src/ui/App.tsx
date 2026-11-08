@@ -284,6 +284,7 @@ function WatchScreen({
         strings={strings}
         lang={settings.lang}
         currentIndex={currentIndex}
+        endAt={credit?.endAt}
         onSeek={seek}
       />
 

@@ -86,22 +86,41 @@ a { color: var(--accent); }
    pushed off the card (task 27.4). */
 .player__endcard-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px;
   max-height: calc(8 * 34px); min-height: 0; flex: 1 1 auto; overflow-y: auto;
-  width: min(32ch, 80vw); justify-self: center; }
+  width: min(32ch, 80vw); justify-self: center; scroll-padding-top: 8px; }
 .player__endcard-row { display: flex; align-items: center; gap: 10px; flex: 1; text-align: left;
   padding: 5px 10px; }
-.player__endcard-item { display: flex; align-items: stretch; gap: 6px; }
+/* One row = the seek button and the Compare button side by side; the
+   "Try this first" tag sits on its own line above this (task 28.1). */
+.player__endcard-rowline { display: flex; align-items: stretch; gap: 6px; }
+.player__endcard-item { display: flex; flex-direction: column; gap: 2px; }
 /* The loudest point occurrence: the one obvious first click (task 27.2). */
 .player__endcard-item--first { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 8px; }
-.player__endcard-firsttag { flex: none; font-size: .72rem; color: var(--bg); background: var(--accent);
-  border-radius: 999px; padding: 1px 8px; font-weight: 600; margin-left: auto; }
+/* The tag is a small line above the row now, not crammed into the label column
+   (task 28.1), so the label never wraps letter by letter next to the button. */
+.player__endcard-firsttag { align-self: flex-start; font-size: .72rem; color: var(--bg); background: var(--accent);
+  border-radius: 999px; padding: 1px 8px; font-weight: 600; margin-left: 10px; }
 .player__endcard-compare { flex: none; font-size: .8rem; padding: 4px 10px; }
 /* The primary Compare button on the "Try this first" row (task 27.2). */
 .player__endcard-compare--primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
 .player__endcard-compare--primary:hover { filter: brightness(1.08); }
-.player__endcard-time { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 3.5ch; }
+.player__endcard-time { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 3.5ch; flex: none; }
 .player__endcard-sprite { flex: none; object-fit: contain; }
-.player__endcard-label { flex: 1; }
+/* The label wraps only at word boundaries and at most two lines, with a sane
+   minimum width, so a Korean label beside the Compare button never breaks
+   letter by letter (task 28.1). */
+.player__endcard-label { flex: 1; min-width: 8ch; word-break: keep-all; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .player__endcard-again { justify-self: center; margin-top: 4px; flex: none; }
+
+/* The app's own time display and progress bar (task 28.4): spans 0..endAt so a
+   trimmed demo reads its endAt as the duration (0:25, not the file's 0:52). A
+   thin strip under the picture, quiet so it does not fight the native controls;
+   it is the clip's honest length, matching the timeline and the end card. */
+.player__progress { display: flex; align-items: center; gap: 8px; padding: 4px 8px;
+  background: var(--panel); border-top: 1px solid var(--line); line-height: 1.2; }
+.player__progress-track { flex: 1; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.player__progress-fill { height: 100%; background: var(--accent); }
+.player__progress-time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: .8rem; flex: none; }
 
 /* Compare chips (tasks 25.5, 27.1): name the current pass during a Compare run
    — "Captions only" then "With Ghost Captions" — each with a step marker and
