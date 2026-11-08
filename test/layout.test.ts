@@ -723,9 +723,14 @@ describe('layout: ambient settle after steady time (task 23.5)', () => {
     expect(after.textureDensity).toBeLessThan(before.textureDensity);
   });
 
-  it('a rising ambient event does not settle', () => {
+  it('a long rising event settles once its rise is older than trendLabelSec (task 26.2)', () => {
+    // The old per-event rule kept a long rising piece unsettled for its whole
+    // length; task 26.2 settles it once the rise (which began at the start) is
+    // older than trendLabelSec. (A freshly-begun rise keeping the band awake is
+    // covered by the per-occurrence tests with a late rising piece.)
     const ev = makeEvent({ family: 'wind', side: 'left', start: 0, end: 30, loudness: 0.8, trend: 'rising' });
-    expect(edgeFogs([ev], 10, defaultSettings)[0]!.settled).toBe(false);
+    const t = ghostConfig.settleAfterSec.value + ghostConfig.trendLabelSec.value + 1;
+    expect(edgeFogs([ev], t, defaultSettings)[0]!.settled).toBe(true);
   });
 });
 
@@ -847,9 +852,22 @@ describe('edgeFogs: settled ambient folds to a corner chip (task 25.3)', () => {
     expect(after.folded).toBe(true);
   });
 
-  it('a rising ambient event never folds', () => {
+  it('a rising ambient event whose rise is recent does not fold', () => {
+    // Task 26.2: a rise within the last trendLabelSec keeps the band awake. A
+    // single rising event that starts at 0 is "recent" only up to trendLabelSec,
+    // which is before settleSec, so this checks the recent window directly.
     const ev = makeEvent({ family: 'wind', side: 'left', start: 0, end: 60, loudness: 0.8, trend: 'rising' });
-    expect(edgeFogs([ev], ghostConfig.settleSec.value + 5, defaultSettings)[0]!.folded).toBe(false);
+    const t = ghostConfig.trendLabelSec.value - 0.5; // within the recent window
+    expect(edgeFogs([ev], t, defaultSettings)[0]!.folded).toBe(false);
+  });
+
+  it('a long rising piece folds once its rise is older than trendLabelSec (task 26.2)', () => {
+    // The old per-event rule left a long rising piece "rising" for its whole
+    // length and never folded; task 26.2 folds it once the rise is old.
+    // Measured defect: at 22 s music that started at 11 s had not folded.
+    const ev = makeEvent({ family: 'wind', side: 'left', start: 0, end: 60, loudness: 0.8, trend: 'rising' });
+    const t = ghostConfig.settleSec.value + ghostConfig.trendLabelSec.value + 1;
+    expect(edgeFogs([ev], t, defaultSettings)[0]!.folded).toBe(true);
   });
 
   it('folded fogs leave the top band and stack in distinct fold slots', () => {
@@ -869,5 +887,47 @@ describe('edgeFogs: settled ambient folds to a corner chip (task 25.3)', () => {
     const fresh = makeEvent({ id: 'f', family: 'wind', side: 'left', start: 9.5, end: 40, loudness: 0.8, trend: 'rising' });
     const merged = edgeFogs([steady, fresh], 10, defaultSettings)[0]!;
     expect(merged.folded).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 26.2: settling is measured per occurrence, not per event piece.
+// ---------------------------------------------------------------------------
+
+describe('edgeFogs: settle/fold measured per occurrence (task 26.2)', () => {
+  it('a late split piece folds from the occurrence start, not its own start', () => {
+    // The Sintel defect: music that started at 11 s was still unfolded at 22 s
+    // because buildEvents split it and a late piece restarted the settle clock.
+    // Two touching pieces: 11–17 and 17–30 (buildEvents merge gap keeps them in
+    // one occurrence). At 22 s the occurrence has run 11 s — well past settleSec
+    // — so the fog must have folded even though the second piece began at 17 s.
+    const a = makeEvent({ id: 'a', family: 'tenseMusic', side: 'centre-unknown', start: 11, end: 17, loudness: 0.7, trend: 'steady' });
+    const b = makeEvent({ id: 'b', family: 'calmMusic', side: 'centre-unknown', start: 17, end: 30, loudness: 0.7, trend: 'steady' });
+    const merged = edgeFogs([a, b], 22, defaultSettings)[0]!;
+    expect(merged.folded).toBe(true);
+  });
+
+  it('the same single long event (not split) folds at the same time — splitting does not change settling', () => {
+    // The one-event control for the split case above: a single 11–30 music
+    // event must fold at 22 s too, so splitting it into touching pieces never
+    // changes when it settles (task 26.2).
+    const one = makeEvent({ id: 'one', family: 'tenseMusic', side: 'centre-unknown', start: 11, end: 30, loudness: 0.7, trend: 'steady' });
+    expect(edgeFogs([one], 22, defaultSettings)[0]!.folded).toBe(true);
+  });
+
+  it('a recent rise in a later piece unfolds the whole occurrence', () => {
+    // A long steady occurrence that gets a fresh rising piece is kept awake:
+    // the rise began within trendLabelSec, so the occurrence does not fold.
+    const steady = makeEvent({ id: 's', family: 'wind', side: 'left', start: 0, end: 60, loudness: 0.8, trend: 'steady' });
+    const rise = makeEvent({ id: 'r', family: 'wind', side: 'left', start: 20, end: 60, loudness: 0.9, trend: 'rising' });
+    const t = 20 + ghostConfig.trendLabelSec.value - 0.5;
+    expect(edgeFogs([steady, rise], t, defaultSettings)[0]!.folded).toBe(false);
+  });
+
+  it('once that rise is old the occurrence folds again', () => {
+    const steady = makeEvent({ id: 's', family: 'wind', side: 'left', start: 0, end: 60, loudness: 0.8, trend: 'steady' });
+    const rise = makeEvent({ id: 'r', family: 'wind', side: 'left', start: 20, end: 60, loudness: 0.9, trend: 'rising' });
+    const t = 20 + ghostConfig.trendLabelSec.value + 1;
+    expect(edgeFogs([steady, rise], t, defaultSettings)[0]!.folded).toBe(true);
   });
 });

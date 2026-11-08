@@ -8,10 +8,15 @@ import {
   wrapDialogueLines,
   placeLabels,
   labelPlateSize,
+  placeTopBandCentre,
+  topBandBoxes,
+  boxesIntersect,
+  TOP_BAND_CANDIDATE_FRACS,
   EDGE_MARGIN,
   LABEL_GAP,
   AMBIENT_SPRITE_MIN_OPACITY,
   TOP_BAND_FRAC,
+  type Box,
   type LabelRect,
   type Ctx2D,
   type SpriteImageLoader,
@@ -810,10 +815,15 @@ describe('draw: ambient fog names itself once in the top band (tasks 22.4, 23.4)
     );
     const images = ctx.calls.filter((c) => c.op === 'drawImage');
     expect(images.length).toBe(2);
-    const centresX = images.map((c) => (c.args[1] as number) + (c.args[3] as number) / 2);
-    // One in the left half of the band, one in the right half.
-    expect(centresX.some((x) => x < W / 2)).toBe(true);
-    expect(centresX.some((x) => x > W / 2)).toBe(true);
+    // Task 26.1 places each top-band sprite at the first free candidate centre,
+    // so the two sprites take distinct, non-overlapping horizontal positions.
+    const boxes = images.map((c) => ({
+      x0: c.args[1] as number,
+      x1: (c.args[1] as number) + (c.args[3] as number),
+    }));
+    const [a, b] = boxes;
+    const overlap = a!.x0 < b!.x1 && b!.x0 < a!.x1;
+    expect(overlap).toBe(false);
   });
 
   it('a side fog draws exactly one sprite and one label in that band', () => {
@@ -1004,5 +1014,149 @@ describe('draw: top band is shallow and holds its texture (task 24.3)', () => {
     const bandBottom = Math.min(H * (1 - 0.18), H * TOP_BAND_FRAC);
     // The sprite box bottom stays within the shallow band.
     expect(dy + dh).toBeLessThanOrEqual(bandBottom + 1e-6);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 26.1: point ghosts and the top band never overlap.
+// ---------------------------------------------------------------------------
+
+describe('placeTopBandCentre: avoids obstacle boxes (task 26.1)', () => {
+  it('takes the first candidate centre whose sprite box and plate clear every obstacle', () => {
+    const W = 1000;
+    const spriteR = 40;
+    const spriteCY = 60;
+    const labelTop = 110;
+    const plateW = 80;
+    const plateH = 24;
+    // A ghost box sitting right over the middle candidate (W/2) forces the next
+    // candidate (W*0.25).
+    const ghost: Box = { x: W / 2 - 60, y: 0, w: 120, h: 200 };
+    const cx = placeTopBandCentre(spriteR, spriteCY, labelTop, plateW, plateH, W, [ghost]);
+    expect(cx).toBe(TOP_BAND_CANDIDATE_FRACS[1]! * W); // W*0.25
+    // The chosen boxes clear the ghost.
+    const [sb, pb] = topBandBoxes(cx, spriteR, spriteCY, labelTop, plateW, plateH);
+    expect(boxesIntersect(sb, ghost)).toBe(false);
+    expect(boxesIntersect(pb, ghost)).toBe(false);
+  });
+
+  it('returns the middle (W/2) when nothing is in the way', () => {
+    const W = 1000;
+    const cx = placeTopBandCentre(40, 60, 110, 80, 24, W, []);
+    expect(cx).toBe(W / 2);
+  });
+
+  it('falls back to the middle when every candidate is blocked', () => {
+    const W = 1000;
+    // A band of obstacles spanning the whole width blocks every candidate.
+    const wall: Box = { x: 0, y: 0, w: W, h: 300 };
+    const cx = placeTopBandCentre(40, 60, 110, 80, 24, W, [wall]);
+    expect(cx).toBe(TOP_BAND_CANDIDATE_FRACS[0]! * W);
+  });
+
+  it('property: the chosen sprite box and plate avoid every obstacle when a free candidate exists', () => {
+    const boxArb = fc.record({
+      x: fc.double({ min: 0, max: 1000, noNaN: true }),
+      y: fc.double({ min: 0, max: 150, noNaN: true }),
+      w: fc.double({ min: 10, max: 120, noNaN: true }),
+      h: fc.double({ min: 10, max: 120, noNaN: true }),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(boxArb, { minLength: 0, maxLength: 3 }),
+        fc.integer({ min: 600, max: 2000 }),
+        fc.double({ min: 20, max: 60, noNaN: true }),
+        (obstacles, W, spriteR) => {
+          const spriteCY = 60;
+          const labelTop = 110;
+          const plateW = 80;
+          const plateH = 24;
+          const cx = placeTopBandCentre(spriteR, spriteCY, labelTop, plateW, plateH, W, obstacles);
+          const [sb, pb] = topBandBoxes(cx, spriteR, spriteCY, labelTop, plateW, plateH);
+          // Check whether ANY candidate was free.
+          const free = (c: number): boolean => {
+            const [s, p] = topBandBoxes(c * 1, spriteR, spriteCY, labelTop, plateW, plateH);
+            return !obstacles.some((o) => boxesIntersect(s, o) || boxesIntersect(p, o));
+          };
+          const anyFree = TOP_BAND_CANDIDATE_FRACS.some((frac) => free(frac * W));
+          if (anyFree) {
+            // The chosen centre must clear every obstacle.
+            for (const o of obstacles) {
+              expect(boxesIntersect(sb, o)).toBe(false);
+              expect(boxesIntersect(pb, o)).toBe(false);
+            }
+          }
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+});
+
+describe('draw: a top-band ambient sprite never lands on a point ghost (task 26.1)', () => {
+  it('moves the top-band sprite + label off a centre point ghost', () => {
+    const W = 1000;
+    const H = 600;
+    const loader = makeImageLoader();
+    const ctx = makeFakeCtx(W, H);
+    // A big centre point ghost high in the frame (its box reaches into the top
+    // band) plus a no-side wind fog that would otherwise sit at the middle.
+    draw(
+      ctx,
+      [sprite({ family: 'gunshot', x: 0.5, y: 0.12, scale: 1, label: 'gunshot' })],
+      [fog({ family: 'wind', edge: 'top', label: 'wind' })],
+      0,
+      false,
+      { loader },
+    );
+    // Two sprites drawn (the ghost and the ambient sprite). Find the ambient
+    // one (wind family image is requested; but both use drawImage). Instead
+    // assert their boxes do not overlap.
+    const images = ctx.calls.filter((c) => c.op === 'drawImage');
+    expect(images.length).toBe(2);
+    const boxes: Box[] = images.map((c) => ({
+      x: c.args[1] as number,
+      y: c.args[2] as number,
+      w: c.args[3] as number,
+      h: c.args[4] as number,
+    }));
+    const [a, b] = boxes;
+    expect(boxesIntersect(a!, b!)).toBe(false);
+  });
+
+  it('the ambient label plate does not sit on the point ghost box', () => {
+    const W = 1000;
+    const H = 600;
+    const loader = makeImageLoader();
+    const ctx = makeFakeCtx(W, H);
+    draw(
+      ctx,
+      [sprite({ family: 'gunshot', x: 0.5, y: 0.1, scale: 1, label: 'gunshot' })],
+      [fog({ family: 'wind', edge: 'top', label: 'wind' })],
+      0,
+      false,
+      { loader },
+    );
+    // The ghost sprite box.
+    const images = ctx.calls.filter((c) => c.op === 'drawImage');
+    const ghostBox: Box = {
+      x: images[0]!.args[1] as number,
+      y: images[0]!.args[2] as number,
+      w: images[0]!.args[3] as number,
+      h: images[0]!.args[4] as number,
+    };
+    // The 'wind' label plate (dark backing plate before the wind fillText).
+    const plates = ctx.calls.filter(
+      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('8,10,16'),
+    );
+    for (const pl of plates) {
+      const plateBox: Box = {
+        x: pl.args[0] as number,
+        y: pl.args[1] as number,
+        w: pl.args[2] as number,
+        h: pl.args[3] as number,
+      };
+      expect(boxesIntersect(plateBox, ghostBox)).toBe(false);
+    }
   });
 });

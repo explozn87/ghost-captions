@@ -600,32 +600,127 @@ export function fogDecayDuration(cfg: GhostConfig = ghostConfig): number {
 }
 
 /**
- * Whether an ambient event has been steady long enough to settle (task 23.5):
- * active for more than `settleAfterSec` with no recent loudness rise. We model
- * "no recent rise" simply from the trend — a `rising` event has not settled,
- * everything else settles once it has run past the settle time. Pure: it reads
- * only the event timing and the config. Never settled under reduced motion is
- * not needed — the fade is an opacity change, kept under reduced motion as a
- * static level (the sprite and label stay, Req 6.6).
+ * Whether an ambient event has been steady long enough to settle (task 23.5,
+ * measured per OCCURRENCE in task 26.2): the OCCURRENCE it belongs to has been
+ * running for more than `settleAfterSec` (counted from the occurrence's start,
+ * `occStart`, not the event piece's own start) with no recent loudness rise.
+ *
+ * Task 26.2 — the earlier version read the event piece's own `start` and
+ * `trend`, so when `buildEvents` split a long cue into pieces a late piece's
+ * clock restarted and a single long `rising` piece blocked settling for its
+ * whole length. Measured defect: at 22 s, music that started at 11 s had not
+ * folded. Now the settle clock runs from the occurrence's start, and "a recent
+ * rise" is a rise whose own start was within the last `trendLabelSec` —
+ * `recentRise` — so a long rising piece no longer blocks settling once its rise
+ * is old. Pure: it reads only the passed timing, flags and config.
  */
-function fogSettledAt(event: SoundEvent, t: number, cfg: GhostConfig): boolean {
-  if (t < event.start + cfg.settleAfterSec.value) return false;
+function fogSettledAt(
+  occStart: number,
+  event: SoundEvent,
+  recentRise: boolean,
+  t: number,
+  cfg: GhostConfig,
+): boolean {
+  if (t < occStart + cfg.settleAfterSec.value) return false;
   if (t >= event.end) return false;
-  return event.trend !== 'rising';
+  return !recentRise;
 }
 
 /**
  * Whether an ambient event has been steady long enough to FOLD into a corner
- * chip (task 25.3): active for more than the longer `settleSec` with no recent
- * loudness rise. Same shape as {@link fogSettledAt} but with the longer
- * threshold, so a sound first fades its band (settle, task 23.5) then folds to
- * a chip. A rising event never folds. Kept under reduced motion as a static
- * state (the chip is shown without the fold animation, Req 6.6).
+ * chip (task 25.3, measured per OCCURRENCE in task 26.2): its OCCURRENCE has
+ * been running for more than the longer `settleSec` (counted from `occStart`)
+ * with no recent loudness rise. Same shape as {@link fogSettledAt} with the
+ * longer threshold, so a sound first fades its band (settle, task 23.5) then
+ * folds to a chip. A rise within the last `trendLabelSec` unfolds it. Kept
+ * under reduced motion as a static state (the chip is shown without the fold
+ * animation, Req 6.6).
  */
-function fogFoldedAt(event: SoundEvent, t: number, cfg: GhostConfig): boolean {
-  if (t < event.start + cfg.settleSec.value) return false;
+function fogFoldedAt(
+  occStart: number,
+  event: SoundEvent,
+  recentRise: boolean,
+  t: number,
+  cfg: GhostConfig,
+): boolean {
+  if (t < occStart + cfg.settleSec.value) return false;
   if (t >= event.end) return false;
-  return event.trend !== 'rising';
+  return !recentRise;
+}
+
+/**
+ * Per-occurrence settle info for the ambient events passed to `edgeFogs` (task
+ * 26.2). For each ambient event this records the START of the occurrence it
+ * belongs to (so the settle/fold clock runs from the occurrence, not the split
+ * piece) and whether a loudness RISE began recently in that occurrence (a rise
+ * whose own start is within the last `trendLabelSec`, which unfolds the band).
+ *
+ * Ambient events are grouped the same way as the fog merge (task 24.1) and the
+ * occurrence counter (task 23.1): by {@link groupKey} (all music families fold
+ * into one `'music'` group) AND by edge, so a left wind and a top wind stay
+ * distinct occurrences. Within a group, events overlapping or within
+ * `occurrenceGapSec` of the running end fold into one occurrence. Pure.
+ */
+function ambientOccurrenceInfo(
+  events: readonly SoundEvent[],
+  t: number,
+  cfg: GhostConfig,
+): Map<SoundEvent, { occStart: number; recentRise: boolean }> {
+  const info = new Map<SoundEvent, { occStart: number; recentRise: boolean }>();
+  const gap = cfg.occurrenceGapSec.value;
+  const trendWindow = cfg.trendLabelSec.value;
+
+  // Bucket ambient events by group+edge, matching the fog merge key.
+  const buckets = new Map<string, SoundEvent[]>();
+  for (const e of events) {
+    if (e.isSpeech || !isAmbientFamily(e.family, cfg)) continue;
+    const key = `${groupKey(e.family)}|${fogEdgeFor(e.side)}`;
+    const list = buckets.get(key);
+    if (list) list.push(e);
+    else buckets.set(key, [e]);
+  }
+
+  for (const list of buckets.values()) {
+    list.sort((a, b) => a.start - b.start || a.end - b.end);
+    let current: SoundEvent[] = [];
+    let currentEnd = -Infinity;
+    const flush = () => {
+      if (current.length === 0) return;
+      let occStart = Infinity;
+      // A rise is "recent" when ANY member's rising piece started within the
+      // last trendLabelSec: that keeps the band awake briefly after a swell,
+      // then lets the occurrence settle even if the piece is still labelled
+      // rising for its whole (longer) length.
+      let recentRise = false;
+      for (const e of current) {
+        if (e.start < occStart) occStart = e.start;
+        if (e.trend === 'rising' && t - e.start <= trendWindow && t >= e.start) {
+          recentRise = true;
+        }
+      }
+      for (const e of current) info.set(e, { occStart, recentRise });
+      current = [];
+      currentEnd = -Infinity;
+    };
+    for (const e of list) {
+      if (current.length === 0) {
+        current.push(e);
+        currentEnd = e.end;
+        continue;
+      }
+      if (e.start - currentEnd < gap) {
+        current.push(e);
+        currentEnd = Math.max(currentEnd, e.end);
+      } else {
+        flush();
+        current.push(e);
+        currentEnd = e.end;
+      }
+    }
+    flush();
+  }
+
+  return info;
 }
 
 /**
@@ -685,6 +780,11 @@ export function edgeFogs(
     arriving: boolean;
   }
 
+  // Per-occurrence settle info (task 26.2): the occurrence start and recent-rise
+  // flag for every ambient event, so the settle/fold clock runs from the
+  // occurrence rather than the split event piece.
+  const occInfo = ambientOccurrenceInfo(events, t, cfg);
+
   const raw: RawFog[] = [];
   for (const event of events) {
     if (event.isSpeech) continue;
@@ -692,8 +792,12 @@ export function edgeFogs(
     if (settings.mutedFamilies.has(event.family)) continue;
     const opacity = fogOpacityAt(event, t, settings.reducedMotion, cfg);
     if (opacity <= 0) continue;
-    const settled = fogSettledAt(event, t, cfg);
-    const folded = fogFoldedAt(event, t, cfg);
+    // Measure settling from the occurrence (task 26.2): fall back to the event's
+    // own start/trend if the event was not grouped (should not happen for
+    // ambient events, but keeps the function total).
+    const occ = occInfo.get(event) ?? { occStart: event.start, recentRise: event.trend === 'rising' };
+    const settled = fogSettledAt(occ.occStart, event, occ.recentRise, t, cfg);
+    const folded = fogFoldedAt(occ.occStart, event, occ.recentRise, t, cfg);
     // Texture density tracks loudness/ominousness so a louder, more ominous
     // ambient sound has a denser band texture (task 18.2); a settled band
     // thins its texture (task 23.5).

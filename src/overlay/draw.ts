@@ -437,6 +437,103 @@ export function labelPlateSize(textWidth: number): { w: number; h: number } {
 }
 
 /**
+ * An axis-aligned box in device pixels, top-left origin. Used as an obstacle
+ * when placing the top-band ambient items so they never sit on a point ghost
+ * (task 26.1).
+ */
+export interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Whether two boxes overlap (share any area). Touching edges do not count. */
+export function boxesIntersect(a: Box, b: Box): boolean {
+  return (
+    a.x < b.x + b.w - 1e-9 &&
+    b.x < a.x + a.w - 1e-9 &&
+    a.y < b.y + b.h - 1e-9 &&
+    b.y < a.y + a.h - 1e-9
+  );
+}
+
+/**
+ * The candidate centre-x fractions a top-band ambient item tries, in order
+ * (task 26.1): the middle first, then the quarter points, then just inside the
+ * left edge. The first candidate whose sprite box AND label plate clear every
+ * obstacle is taken.
+ */
+export const TOP_BAND_CANDIDATE_FRACS: readonly number[] = [0.5, 0.25, 0.75, 0.12];
+
+/**
+ * Choose a centre-x (device px) for one top-band ambient item so its sprite box
+ * and its label plate avoid every obstacle box (task 26.1).
+ *
+ * A top-band ambient fog draws a sprite (centred at `spriteCY`, box side
+ * `2*spriteRadius`) with its label plate below it (top at `labelTop`, size
+ * `plateW×plateH`). Both share one centre x. This tries the candidate fractions
+ * {@link TOP_BAND_CANDIDATE_FRACS} in order and returns the first whose two
+ * boxes intersect none of `obstacles` (the drawn point-ghost boxes plus the
+ * boxes already claimed by earlier top-band items). If no candidate is free it
+ * returns the first (W/2) — the band must still name itself, and `placeLabels`
+ * then resolves the residual label overlap.
+ *
+ * Pure: it reads only the sizes and the obstacle boxes and returns a number, so
+ * the property (no chosen sprite box or plate intersects a ghost box when a
+ * free candidate exists) is covered by a fast-check test.
+ */
+export function placeTopBandCentre(
+  spriteRadius: number,
+  spriteCY: number,
+  labelTop: number,
+  plateW: number,
+  plateH: number,
+  W: number,
+  obstacles: readonly Box[],
+): number {
+  const boxesFor = (cx: number): [Box, Box] => {
+    const sprite: Box = {
+      x: cx - spriteRadius,
+      y: spriteCY - spriteRadius,
+      w: spriteRadius * 2,
+      h: spriteRadius * 2,
+    };
+    const plate: Box = { x: cx - plateW / 2, y: labelTop, w: plateW, h: plateH };
+    return [sprite, plate];
+  };
+  const free = (cx: number): boolean => {
+    const [sprite, plate] = boxesFor(cx);
+    for (const o of obstacles) {
+      if (boxesIntersect(sprite, o) || boxesIntersect(plate, o)) return false;
+    }
+    return true;
+  };
+  for (const frac of TOP_BAND_CANDIDATE_FRACS) {
+    const cx = frac * W;
+    if (free(cx)) return cx;
+  }
+  // No free candidate (very crowded): fall back to the middle.
+  return TOP_BAND_CANDIDATE_FRACS[0]! * W;
+}
+
+/** The two obstacle boxes (sprite + label plate) a top-band centre occupies. */
+export function topBandBoxes(
+  cx: number,
+  spriteRadius: number,
+  spriteCY: number,
+  labelTop: number,
+  plateW: number,
+  plateH: number,
+): [Box, Box] {
+  return [
+    { x: cx - spriteRadius, y: spriteCY - spriteRadius, w: spriteRadius * 2, h: spriteRadius * 2 },
+    { x: cx - plateW / 2, y: labelTop, w: plateW, h: plateH },
+  ];
+}
+
+
+/**
  * A label waiting to be placed (tasks 22.1, 22.2): its text, the opacity to
  * draw it at, and its wished-for plate rectangle (centre x, top y, size). The
  * rect is resolved against the other plates by `placeLabels` before drawing.
@@ -544,11 +641,42 @@ export function draw(
     const ambientLabels: PendingLabel[] = [];
     const markerLabels: PendingLabel[] = [];
 
+    // Point ghosts never overlap the top band (task 26.1): compute every drawn
+    // point-ghost box up front (at its trembled centre, matching where the
+    // sprite is actually painted below) so the top-band ambient sprites and
+    // labels can be placed clear of them. The box is the sprite's drawn
+    // bounding square.
+    const ghostBoxes: Box[] = [];
+    for (const sprite of sprites) {
+      const cx = sprite.x * W;
+      const cy = sprite.y * H;
+      const radius = BASE_RADIUS_PX * sprite.scale * minDim;
+      let dx = 0;
+      let dy = 0;
+      if (!reducedMotion && sprite.trembleHz > 0) {
+        const phase = 2 * Math.PI * sprite.trembleHz * time;
+        dx = Math.sin(phase) * radius * TREMBLE_AMPLITUDE;
+        dy = Math.cos(phase) * radius * TREMBLE_AMPLITUDE * 0.5;
+      }
+      ghostBoxes.push({
+        x: cx + dx - radius,
+        y: cy + dy - radius,
+        w: radius * 2,
+        h: radius * 2,
+      });
+    }
+    // The running obstacle set the top-band items avoid: the ghost boxes plus
+    // the boxes each placed top-band item claims, so two top-band items never
+    // sit on top of each other either (task 26.1).
+    const topBandObstacles: Box[] = [...ghostBoxes];
+
     // Ambient edge fog sits behind the ghosts. drawEdgeFog paints the vignette,
     // texture and family sprite and returns the label plate(s) to place later
-    // (a whole-frame fog returns one plate per edge, task 22.4).
+    // (a whole-frame fog returns one plate per edge, task 22.4). The top-band
+    // fogs read and extend `topBandObstacles` so their sprite + label land in
+    // the first free candidate centre, clear of every ghost (task 26.1).
     for (const fog of fogs) {
-      const pending = drawEdgeFog(octx, fog, time, reducedMotion, loader, minDim, captionBand);
+      const pending = drawEdgeFog(octx, fog, time, reducedMotion, loader, minDim, captionBand, topBandObstacles);
       ambientLabels.push(...pending);
     }
 
@@ -717,6 +845,7 @@ function drawEdgeFog(
   loader: SpriteImageLoader,
   minDim: number,
   captionBand: number,
+  topBandObstacles: Box[] = [],
 ): PendingLabel[] {
   if (fog.opacity <= 0) return [];
   const W = ctx.canvas.width;
@@ -759,7 +888,6 @@ function drawEdgeFog(
     const slot = Math.min(fog.topSlot, count - 1);
     const slotW = W / count;
     const slotX0 = slot * slotW;
-    const slotCX = slotX0 + slotW / 2;
 
     // Task 24.2: the band is ONE vertical gradient across the FULL frame width,
     // so there is no hard vertical edge between slots. It is painted once — by
@@ -783,11 +911,29 @@ function drawEdgeFog(
 
     // One sprite and one label for this slot, sprite above the label, both kept
     // inside the band (the label plate may extend just below it, never into the
-    // caption band — placeLabels enforces that).
+    // caption band — placeLabels enforces that). Task 26.1: the sprite + label
+    // take the first candidate centre whose boxes clear every point ghost (and
+    // the top-band items already placed), so a ghost never sits on the ambient
+    // sprite. The chosen boxes are added to `topBandObstacles` so later items
+    // avoid them too.
     const spriteCY = topBandH * 0.42;
-    drawAmbientSprite(ctx, fog.family, slotCX, spriteCY, ambientRadius, spriteOpacity, loader);
+    const plate = measureLabel(ctx, fog.label, 0, 0, 1, reducedMotion && fog.arriving);
     const labelTop = spriteCY + ambientRadius + LABEL_BELOW_GAP;
-    return [measureLabel(ctx, fog.label, slotCX, labelTop, 1, reducedMotion && fog.arriving)];
+    const cx = placeTopBandCentre(
+      ambientRadius,
+      spriteCY,
+      labelTop,
+      plate.rect.w,
+      plate.rect.h,
+      W,
+      topBandObstacles,
+    );
+    const [spriteBox, plateBox] = topBandBoxes(cx, ambientRadius, spriteCY, labelTop, plate.rect.w, plate.rect.h);
+    topBandObstacles.push(spriteBox, plateBox);
+    drawAmbientSprite(ctx, fog.family, cx, spriteCY, ambientRadius, spriteOpacity, loader);
+    plate.rect.x = cx;
+    plate.rect.y = labelTop;
+    return [plate];
   }
 
   // A measured side: paint that side's vertical band.
