@@ -112,6 +112,9 @@ export const ko: Strings = {
     chipSoundOn: '🔊 소리 켜짐 — 유령 쉬는 중',
     fullscreen: '전체 화면(유령 포함)',
     exitFullscreen: '전체 화면 나가기',
+    play: '재생',
+    pause: '일시정지',
+    seek: '탐색',
 
     missedCount: '자막이 놓친 소리: {n}',
     missedPlusOne: '+1 {sound}',
@@ -125,8 +128,9 @@ export const ko: Strings = {
     compareWithGhosts: '소리의 유령과 함께',
     compareCaptionsOnlyPlate: '자막만 — 이 장면의 자막에는 이 소리가 없습니다.',
     compareStep: '{step}/{total}',
+    compareClosing: '방금 본 「{label}」는 자막만으로는 알 수 없던 소리입니다.',
     tryThisFirst: '먼저 눌러 보세요',
-    compareFirst: '먼저 비교해 보기',
+    compareFirst: '먼저 비교',
     missedBasisDemoNoFile:
       '이 데모에는 자막 파일이 없어, 대사만 적힌 자막을 가정하고 셌습니다.',
 

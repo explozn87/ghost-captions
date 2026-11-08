@@ -113,6 +113,9 @@ export const en: Strings = {
     chipSoundOn: '🔊 Sound on — ghosts resting',
     fullscreen: 'Full screen (with ghosts)',
     exitFullscreen: 'Exit full screen',
+    play: 'Play',
+    pause: 'Pause',
+    seek: 'Seek',
 
     missedCount: 'Sounds captions miss: {n}',
     missedPlusOne: '+1 {sound}',
@@ -126,8 +129,9 @@ export const en: Strings = {
     compareWithGhosts: 'With Ghost Captions',
     compareCaptionsOnlyPlate: 'Captions only — these captions say nothing about this sound.',
     compareStep: '{step}/{total}',
+    compareClosing: 'The “{label}” you just saw is a sound the captions alone never told you.',
     tryThisFirst: 'Try this first',
-    compareFirst: 'Compare this first',
+    compareFirst: 'Try first',
     missedBasisDemoNoFile:
       'This demo has no subtitle file, so we counted against captions that contain dialogue only.',
 

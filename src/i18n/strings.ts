@@ -121,6 +121,11 @@ export interface Strings {
     chipSoundOn: string;
     fullscreen: string;
     exitFullscreen: string;
+    /** Play/pause button labels for the player's own controls (task 29.2). */
+    play: string;
+    pause: string;
+    /** Accessible label for the player's own seek slider (task 29.2). */
+    seek: string;
 
     // "Sounds the captions missed" counter (task 22.5). `{n}` is replaced with
     // the count; `{sound}` with the newest missed sound's name.
@@ -152,6 +157,14 @@ export interface Strings {
     compareCaptionsOnlyPlate: string;
     /** The step marker on a compare chip, e.g. "1/2" (task 27.1). `{step}`/`{total}`. */
     compareStep: string;
+    /**
+     * The one-sentence close shown under the end-card headline after a Compare
+     * finishes (task 29.5), naming the row that was just compared. `{label}` is
+     * the occurrence's own label (e.g. "gunshot, from the right"); the sentence
+     * makes no claim beyond that label. It stays until another Compare or Watch
+     * again.
+     */
+    compareClosing: string;
     /** The "Try this first" tag on the loudest end-card evidence row (task 27.2). */
     tryThisFirst: string;
     /**

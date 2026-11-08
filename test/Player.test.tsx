@@ -413,8 +413,10 @@ describe("Player end-card headline count (task 28.2)", () => {
     setTime(video, 1.5); // only the gunshot (t=1) has started
     fireEnded(video);
     expect(screen.getByText('Captions would have missed 2 sounds in this clip.')).toBeInTheDocument();
-    // The number equals the number of rendered evidence rows.
-    const rows = screen.getAllByRole('button', { name: /Compare/ });
+    // The number equals the number of rendered evidence rows. Since task 29.3
+    // the primary button reads "▶ Try first" (no longer containing "Compare"),
+    // so count the Compare buttons by their shared class instead of by name.
+    const rows = document.querySelectorAll('.player__endcard-compare');
     expect(rows).toHaveLength(2);
   });
 });
@@ -460,5 +462,187 @@ describe('Player time display spans endAt (task 28.4)', () => {
     );
     // track.duration is 20 s.
     expect(screen.getByText('0:00 / 0:20')).toBeInTheDocument();
+  });
+});
+
+// --- Task 29: the overlay is never stale, and the demo closes cleanly -------
+
+/** Fire a `seeked` event after moving the playhead. */
+function fireSeeked(video: HTMLVideoElement, seconds: number) {
+  act(() => {
+    Object.defineProperty(video, 'currentTime', { value: seconds, writable: true, configurable: true });
+    video.dispatchEvent(new Event('seeked'));
+  });
+}
+
+describe('Player redraws and follows time on seek (task 29.1)', () => {
+  it('a seek updates the counter at once, from the sought time (not the pre-seek time)', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    // Play forward past both non-speech events.
+    setTime(video, 10);
+    expect(screen.getByText('Sounds captions miss: 2')).toBeInTheDocument();
+    // Seek back before the car (t=4): the counter must follow the seek
+    // immediately on `seeked`, not wait for the next timeupdate tick.
+    fireSeeked(video, 1.5);
+    expect(screen.getByText('Sounds captions miss: 1')).toBeInTheDocument();
+    // Seek back before the gunshot: counter drops to 0 at once.
+    fireSeeked(video, 0.5);
+    expect(screen.getByText('Sounds captions miss: 0')).toBeInTheDocument();
+  });
+});
+
+describe('Player hides native controls, keeps its own (task 29.2)', () => {
+  it('the video has no native controls and the player shows its own play button', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    // Native controls are hidden so only the trimmed time shows (task 29.2).
+    expect(getVideo().controls).toBe(false);
+    // The player's own play/pause button is present and labelled (paused at
+    // first, so it reads "Play").
+    expect(screen.getByRole('button', { name: strings.ui.play })).toBeInTheDocument();
+    // Its own seek slider is present and keyboard reachable.
+    expect(screen.getByRole('slider', { name: strings.ui.seek })).toBeInTheDocument();
+  });
+});
+
+describe('Player end-card primary button fits (task 29.3)', () => {
+  it('the primary Compare button is short ("▶ Try first") and the label has keep-all', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    // The shortened primary label (task 29.3): "▶ Try first".
+    expect(
+      screen.getByRole('button', { name: `▶ ${strings.ui.compareFirst}` }),
+    ).toBeInTheDocument();
+    expect(strings.ui.compareFirst).toBe('Try first');
+  });
+
+  it('CSS stops the evidence list and rows scrolling sideways (task 29.3)', () => {
+    const list = appCss.match(/\.player__endcard-list\s*\{([^}]*)\}/);
+    expect(list).not.toBeNull();
+    expect(list![1]).toMatch(/overflow-x:\s*hidden/);
+    const rowline = appCss.match(/\.player__endcard-rowline\s*\{([^}]*)\}/);
+    expect(rowline).not.toBeNull();
+    expect(rowline![1]).toMatch(/min-width:\s*0/);
+  });
+});
+
+describe('Player compare closing sentence (task 29.5)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // A deterministic wall clock so the compare state machine (driven by
+    // performance.now) advances with the fake timers.
+    let now = 0;
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    // Advance the mocked clock whenever timers run so the rAF-driven compare
+    // step sees elapsed time pass.
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      now += 1000; // 1 s per frame, so two 3 s passes finish quickly
+      return setTimeout(() => cb(now), 0) as unknown as number;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => clearTimeout(id as unknown as ReturnType<typeof setTimeout>));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the closing sentence naming the compared row after a compare finishes', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    // Stub play/pause so the compare run can drive the video in jsdom.
+    video.play = vi.fn(() => Promise.resolve());
+    video.pause = vi.fn();
+    setTime(video, 10);
+    fireEnded(video);
+    // Start the compare on the loudest point row (the gunshot).
+    clickPrimaryCompare(strings);
+    // Run the compare state machine to completion (two 3 s passes).
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    // The end card returns with the one-sentence close naming the gunshot row.
+    // The row's label is its occurrence noun (the specific classifier label
+    // "Gunshot" when confident, plus the side phrase).
+    const label = 'Gunshot, from the left';
+    expect(
+      screen.getByText(strings.ui.compareClosing.replace('{label}', label)),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the closing sentence in Korean', () => {
+    const strings = t('ko');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto', 'ko')} strings={strings} />,
+    );
+    const video = getVideo();
+    video.play = vi.fn(() => Promise.resolve());
+    video.pause = vi.fn();
+    setTime(video, 10);
+    fireEnded(video);
+    clickPrimaryCompare(strings);
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    const label = 'Gunshot, 왼쪽에서';
+    expect(
+      screen.getByText(strings.ui.compareClosing.replace('{label}', label)),
+    ).toBeInTheDocument();
+  });
+});
+
+/** A track whose music occurrence has a trailing fragment past the demo end. */
+const trailingMusicTrack: EventTrack = {
+  duration: 52,
+  mono: false,
+  labelsAvailable: true,
+  events: [
+    {
+      id: 'm1', start: 11, end: 23.3, family: 'calmMusic', isSpeech: false,
+      topLabel: 'Music', labelScore: 0.9, side: 'centre-unknown', sideTrack: [], sideConfidence: 0,
+      loudness: 0.6, trend: 'steady', ominous: 0.3, beatPeriod: null,
+    },
+    {
+      // A trailing music fragment that STARTS after the trimmed demo end (25 s).
+      id: 'm2', start: 26, end: 40, family: 'calmMusic', isSpeech: false,
+      topLabel: 'Music', labelScore: 0.9, side: 'centre-unknown', sideTrack: [], sideConfidence: 0,
+      loudness: 0.6, trend: 'steady', ominous: 0.3, beatPeriod: null,
+    },
+  ],
+};
+
+describe('Player end-card music span agrees with the picture (task 29.4)', () => {
+  it('lists the music span ending where it is last shown, not stretched to endAt', () => {
+    const strings = t('en');
+    render(
+      <Player
+        src="blob:mock"
+        track={trailingMusicTrack}
+        settings={settingsWith('auto')}
+        strings={strings}
+        endAt={25}
+        isDemo
+      />,
+    );
+    const video = getVideo();
+    setTime(video, 25);
+    fireEnded(video);
+    // The occurrence's last SHOWN moment is 23.3 (the trailing fragment starts
+    // after endAt), so the row reads 0:11–0:23, not 0:11–0:25.
+    expect(screen.getByText('0:11\u20130:23')).toBeInTheDocument();
+    expect(screen.queryByText('0:11\u20130:25')).toBeNull();
   });
 });

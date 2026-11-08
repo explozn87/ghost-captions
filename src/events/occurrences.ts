@@ -240,6 +240,25 @@ export function missedBasis(dialogue: readonly DialogueCue[]): 'dialogueOnly' | 
   return dialogue.length > 0 ? 'withFile' : 'dialogueOnly';
 }
 
+/**
+ * The last moment an occurrence is actually SHOWN on the overlay, clamped to a
+ * clip's effective end (task 29.4). The end card's listed span and the picture
+ * must agree: the overlay draws an occurrence only while one of its member
+ * events (whose own start is at or before the effective end) is running, so a
+ * trailing fragment that STARTS after the effective end must never extend the
+ * listed span. Returns the largest member-event `end` among members that start
+ * at or before `effectiveEnd`, capped at `effectiveEnd`. Pure, so the end card
+ * and its tests share one definition.
+ */
+export function occurrenceShownEnd(occ: Occurrence, effectiveEnd: number): number {
+  let shownEnd = occ.start;
+  for (const e of occ.events) {
+    if (e.start > effectiveEnd) continue;
+    if (e.end > shownEnd) shownEnd = e.end;
+  }
+  return Math.min(shownEnd, effectiveEnd);
+}
+
 /** A time in seconds as `M:SS`, rounded to the nearest second (task 25.1). */
 function clockRounded(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));

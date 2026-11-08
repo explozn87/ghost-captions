@@ -9,6 +9,7 @@ import {
   missedBasis,
   isShownEvent,
   occurrenceTimeLabel,
+  occurrenceShownEnd,
 } from '../src/events/occurrences.ts';
 import type { DialogueCue, Family, SoundEvent } from '../src/shared/types.ts';
 
@@ -230,5 +231,43 @@ describe('occurrenceTimeLabel: spans in the evidence (task 25.1)', () => {
   it('rounds both ends of a span to the nearest second', () => {
     // 10.4 → 0:10, 52.6 → 0:53, span >= 3 s so a range is shown.
     expect(occurrenceTimeLabel({ start: 10.4, end: 52.6 })).toBe('0:10\u20130:53');
+  });
+});
+
+describe('occurrenceShownEnd: picture and list agree (task 29.4)', () => {
+  it('ends at the last member event that is actually shown, capped at the clip end', () => {
+    // A music occurrence whose last visible fragment ends at 23.3, with a
+    // trailing fragment that STARTS past the clip's effective end (25). The
+    // overlay stops drawing at 23.3, so the listed span must end there, not be
+    // stretched to 25 by the trailing fragment.
+    const occ = occurrences(
+      [
+        ev({ id: 'm1', family: 'calmMusic', start: 11, end: 20 }),
+        ev({ id: 'm2', family: 'calmMusic', start: 20, end: 23.3 }),
+        ev({ id: 'm3', family: 'calmMusic', start: 26, end: 40 }),
+      ],
+      noMute,
+    )[0]!;
+    // The occurrence itself spans to 40 (all three fold within the gap), but
+    // only members starting at or before 25 are shown.
+    expect(occurrenceShownEnd(occ, 25)).toBeCloseTo(23.3, 5);
+  });
+
+  it('caps the shown end at the effective end when a member runs past it', () => {
+    const occ = occurrences(
+      [ev({ id: 'm', family: 'calmMusic', start: 11, end: 40 })],
+      noMute,
+    )[0]!;
+    // The single member starts before 25 but ends at 40: the shown end is
+    // clamped to the clip's effective end.
+    expect(occurrenceShownEnd(occ, 25)).toBe(25);
+  });
+
+  it('returns the real end for an occurrence wholly inside the clip', () => {
+    const occ = occurrences(
+      [ev({ id: 'g', family: 'gunshot', start: 2, end: 3 })],
+      noMute,
+    )[0]!;
+    expect(occurrenceShownEnd(occ, 25)).toBe(3);
   });
 });

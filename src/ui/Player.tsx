@@ -36,7 +36,7 @@ import {
   latestMissedEvent,
   formatClock,
 } from './settings.ts';
-import { missedOccurrences, missedBasis, occurrenceTimeLabel } from '../events/occurrences.ts';
+import { missedOccurrences, missedBasis, occurrenceTimeLabel, occurrenceShownEnd } from '../events/occurrences.ts';
 import { occurrenceNoun } from '../i18n/soundLabel.ts';
 import {
   comparePlan,
@@ -154,6 +154,14 @@ export function Player({
   // The occurrence start being compared (task 27.1), so the captions-only plate
   // can show a loaded subtitle cue overlapping it instead of the generic line.
   const [compareStart, setCompareStart] = useState<number | null>(null);
+  // The label of the occurrence last compared (task 29.5): once a Compare run
+  // finishes and the end card returns, a one-sentence close naming this row is
+  // shown under the headline. Cleared by another Compare or Watch again.
+  const [closingLabel, setClosingLabel] = useState<string | null>(null);
+  // The label for the compare run in progress, promoted to `closingLabel` only
+  // when the run finishes (so a cancelled/restarted run does not leave a stale
+  // sentence).
+  const compareLabelRef = useRef<string | null>(null);
 
   // Show-when state (task 21.1/21.2): whether the video is currently silent to
   // the viewer (muted or zero volume), driven by the `volumechange` event (no
@@ -171,6 +179,9 @@ export function Player({
   // starts.
   const [videoTime, setVideoTime] = useState(0);
   const [ended, setEnded] = useState(false);
+  // Whether the video is paused, for the player's own play/pause button (task
+  // 29.2: native controls are hidden, so the button reflects and toggles it).
+  const [paused, setPaused] = useState(true);
   // The brief "+1 <sound>" flash and one scale pulse when the count rises
   // (task 22.5). `flash` holds the newest sound's name while visible, or null.
   const [flash, setFlash] = useState<string | null>(null);
@@ -187,6 +198,13 @@ export function Player({
   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const darkFrameRef = useRef(false);
   const lastSampleWallRef = useRef(0);
+  // An immediate-redraw hook (task 29.1): the draw-loop effect assigns the
+  // current `renderAt` here so a `seeked` (or `play` after a seek) can force a
+  // redraw for `video.currentTime` at once, rather than waiting for the next
+  // animation frame — which, with `requestVideoFrameCallback`, does not fire
+  // while the video is seeking and so left the overlay showing the pre-seek
+  // ghosts (step 2/2 of a Compare opened on the wrong ghost).
+  const renderNowRef = useRef<((time: number) => void) | null>(null);
 
   // Expose a seek function to the parent for the timeline/event list.
   useEffect(() => {
@@ -225,8 +243,15 @@ export function Player({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const onEnded = () => setEnded(true);
-    const onPlaying = () => setEnded(false);
+    const onEnded = () => {
+      setEnded(true);
+      setPaused(true);
+    };
+    const onPlaying = () => {
+      setEnded(false);
+      setPaused(false);
+    };
+    const onPause = () => setPaused(true);
     const onSeeking = () => {
       if (!video.ended) setEnded(false);
     };
@@ -245,12 +270,14 @@ export function Player({
     video.addEventListener('ended', onEnded);
     video.addEventListener('play', onPlaying);
     video.addEventListener('playing', onPlaying);
+    video.addEventListener('pause', onPause);
     video.addEventListener('seeking', onSeeking);
     video.addEventListener('timeupdate', onTime);
     return () => {
       video.removeEventListener('ended', onEnded);
       video.removeEventListener('play', onPlaying);
       video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('pause', onPause);
       video.removeEventListener('seeking', onSeeking);
       video.removeEventListener('timeupdate', onTime);
     };
@@ -406,16 +433,46 @@ export function Player({
       }
     };
 
+    // Expose an immediate redraw so a `seeked`/`play`-after-seek can repaint
+    // for the new time at once (task 29.1), not on the next frame callback.
+    renderNowRef.current = (time: number) => {
+      if (stopped) return;
+      renderAt(time);
+    };
+
     tick();
 
     return () => {
       stopped = true;
+      renderNowRef.current = null;
       if (rafHandle) cancelAnimationFrame(rafHandle);
       if (rvfcHandle && rvfc.cancelVideoFrameCallback) {
         rvfc.cancelVideoFrameCallback(rvfcHandle);
       }
     };
   }, [src]);
+
+  // Redraw immediately on seek and on play-after-seek (task 29.1): read
+  // `video.currentTime` and repaint at once so the overlay never shows the
+  // pre-seek state. The draw loop already derives the active ghosts from
+  // `video.currentTime` every frame; this closes the gap during a seek, when
+  // `requestVideoFrameCallback` does not fire. The missed-sounds `videoTime`
+  // is also refreshed so the counter and the overlay agree immediately.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const redrawNow = () => {
+      const t = video.currentTime;
+      if (endAt == null || t < endAt) setVideoTime(t);
+      renderNowRef.current?.(t);
+    };
+    video.addEventListener('seeked', redrawNow);
+    video.addEventListener('play', redrawNow);
+    return () => {
+      video.removeEventListener('seeked', redrawNow);
+      video.removeEventListener('play', redrawNow);
+    };
+  }, [src, endAt]);
 
   const chipState = chipStateFor(settings.showWhen, silent);
   const chipText =
@@ -459,11 +516,14 @@ export function Player({
   // The evidence list on the end card (task 23.3): every counted occurrence up
   // to the clip's effective end (task 25.6), one row each with its time span,
   // family sprite and label.
-  // Spans are clipped to the effective end, so a trimmed demo never lists a
-  // sound as lasting past the point where the viewer stopped watching.
-  const evidence = missedOccurrences(track.events, effectiveEnd, settings, dialogueCues).map((o) =>
-    o.end > effectiveEnd ? { ...o, end: effectiveEnd } : o,
-  );
+  // The listed span ends at the last moment the occurrence is actually SHOWN
+  // on the overlay (task 29.4): a trailing music fragment that starts after the
+  // clip's effective end must not stretch the span past where the ghost/label
+  // is still drawn, so the picture and the list agree.
+  const evidence = missedOccurrences(track.events, effectiveEnd, settings, dialogueCues).map((o) => {
+    const shownEnd = occurrenceShownEnd(o, effectiveEnd);
+    return shownEnd < o.end ? { ...o, end: shownEnd } : o;
+  });
 
   // The end-card headline count is derived from the SAME occurrence list the
   // card shows (task 28.2), never from the live counter at the current
@@ -471,6 +531,12 @@ export function Player({
   // the live `missed` count would fall, but the card still lists every
   // occurrence up to the clip's end, so the number and the rows must agree.
   const endCardText = strings.ui.missedEndCard.replace('{n}', String(evidence.length));
+
+  // The one-sentence close after a Compare finishes (task 29.5): names the row
+  // just compared, making no claim beyond its own label. Null until a Compare
+  // run ends; cleared by another Compare or Watch again.
+  const closingText =
+    closingLabel != null ? strings.ui.compareClosing.replace('{label}', closingLabel) : null;
 
   // The one obvious first click (task 27.2): the loudest POINT occurrence in
   // the evidence list (ambient sounds are atmosphere, a point sound like the
@@ -520,12 +586,43 @@ export function Player({
     const video = videoRef.current;
     if (!video) return;
     setEnded(false);
+    // Watch again starts a fresh viewing: drop the compare closing sentence.
+    setClosingLabel(null);
     video.currentTime = 0;
     // `play()` returns a Promise in browsers but may return undefined in some
     // environments (e.g. jsdom); guard the `.catch` so autoplay rejection never
     // throws.
     const played = video.play() as Promise<void> | undefined;
     if (played && typeof played.catch === 'function') played.catch(() => {});
+  };
+
+  // Play/pause toggle for the player's own controls (task 29.2): the native
+  // `<video controls>` is hidden so only the trimmed time shows, so the player
+  // keeps keyboard play/pause itself — Space or K on the player, or a click on
+  // the picture — plus its own progress bar below.
+  const togglePlay = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused || video.ended) {
+      setEnded(false);
+      const played = video.play() as Promise<void> | undefined;
+      if (played && typeof played.catch === 'function') played.catch(() => {});
+    } else {
+      video.pause();
+    }
+  };
+
+  // Keyboard play/pause on the player (task 29.2): Space or K toggle playback
+  // without the native control bar. Keys are ignored while focus is on a
+  // button/link so Space still activates it (the end-card buttons, the chip).
+  const onPlayerKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    const tag = target?.tagName;
+    if (tag === 'BUTTON' || tag === 'A' || tag === 'INPUT' || tag === 'SELECT') return;
+    if (e.key === ' ' || e.key === 'k' || e.key === 'K') {
+      e.preventDefault();
+      togglePlay();
+    }
   };
 
   // Seek to 0.5 s before an occurrence and play (task 23.3): clicking or
@@ -546,14 +643,17 @@ export function Player({
   // restores the end card. Starting a run leaves the end card (so the video is
   // visible) and ends it by re-showing the card.
   const compareTick = useRef<number>(0);
-  const startCompare = (start: number) => {
+  const startCompare = (start: number, label: string) => {
     const video = videoRef.current;
     if (!video) return;
     const plan = comparePlan(start);
     compareRef.current = { plan, startWall: (typeof performance !== 'undefined' ? performance.now() : Date.now()) };
+    compareLabelRef.current = label;
     setEnded(false);
     setComparePhase('captionsOnly');
     setCompareStart(start);
+    // A new Compare clears any previous closing sentence until this run ends.
+    setClosingLabel(null);
     const step = () => {
       const run = compareRef.current;
       const v = videoRef.current;
@@ -562,10 +662,12 @@ export function Player({
       const elapsed = (now - run.startWall) / 1000;
       const phase = comparePhaseAt(elapsed, run.plan);
       if (phase === 'done') {
-        // Finished: stop the run, pause and return to the end card.
+        // Finished: stop the run, pause and return to the end card, with the
+        // one-sentence close naming the row that was just compared (task 29.5).
         compareRef.current = null;
         setComparePhase(null);
         setCompareStart(null);
+        setClosingLabel(compareLabelRef.current);
         v.pause();
         setEnded(true);
         return;
@@ -612,16 +714,19 @@ export function Player({
       className={`player${isFullscreen ? ' player--fullscreen' : ''}`}
       onPointerEnter={() => setChipVisible(true)}
       onPointerLeave={() => setChipVisible(false)}
+      onKeyDown={onPlayerKeyDown}
+      tabIndex={0}
+      role="region"
+      aria-label={strings.ui.appName}
     >
       <div className="player__stage" style={{ '--ar': String(aspect) } as React.CSSProperties}>
         <video
           ref={videoRef}
           className="player__video"
           src={src}
-          controls
           playsInline
           preload="auto"
-          {...{ controlsList: 'nofullscreen' }}
+          onClick={togglePlay}
           onLoadedMetadata={(e) => {
             const v = e.currentTarget;
             if (v.videoWidth > 0 && v.videoHeight > 0) setAspect(v.videoWidth / v.videoHeight);
@@ -698,6 +803,9 @@ export function Player({
       {overlayVisible && ended && (
         <div className="player__endcard" role="status" aria-live="polite">
           <p className="player__endcard-text">{endCardText}</p>
+          {closingText && (
+            <p className="player__endcard-closing">{closingText}</p>
+          )}
           <p className="player__endcard-basis">{basisText}</p>
           {evidence.length > 0 && (
             <>
@@ -746,7 +854,7 @@ export function Player({
                           className={`player__endcard-compare${
                             isFirstTry ? ' player__endcard-compare--primary' : ''
                           }`}
-                          onClick={() => startCompare(occ.start)}
+                          onClick={() => startCompare(occ.start, label)}
                         >
                           {isFirstTry
                             ? `\u25B6 ${strings.ui.compareFirst}`
@@ -765,18 +873,38 @@ export function Player({
         </div>
       )}
 
-      {/* The app's own time display and progress bar (task 28.4). The native
-          <video> controls show the whole file's duration (0:52 for the Sintel
-          demo); this strip instead spans 0..endAt for a trimmed demo, so the
-          time, the end card and the timeline all agree that the clip is 25 s.
-          For a user file with no endAt it spans the full duration. */}
-      <div className="player__progress" aria-hidden="true">
-        <div className="player__progress-track">
-          <div
-            className="player__progress-fill"
-            style={{ width: `${progressPct}%` }}
-          />
-        </div>
+      {/* The app's own controls (tasks 28.4, 29.2). The native <video>
+          controls are hidden so only the trimmed time shows; the player keeps
+          its own play/pause button, a keyboard-seekable slider and a time
+          readout that spans 0..endAt (a trimmed demo reads 0:25, not the
+          file's 0:52). For a user file with no endAt it spans the full
+          duration. */}
+      <div className="player__progress">
+        <button
+          type="button"
+          className="player__playpause"
+          onClick={togglePlay}
+          aria-label={paused ? strings.ui.play : strings.ui.pause}
+          title={paused ? strings.ui.play : strings.ui.pause}
+        >
+          {paused ? '▶' : '⏸'}
+        </button>
+        <input
+          type="range"
+          className="player__progress-range"
+          min={0}
+          max={displayDuration || 0}
+          step={0.1}
+          value={Math.min(videoTime, displayDuration)}
+          aria-label={strings.ui.seek}
+          onChange={(e) => {
+            const video = videoRef.current;
+            if (!video) return;
+            setEnded(false);
+            video.currentTime = Number(e.currentTarget.value);
+          }}
+          style={{ '--pct': `${progressPct}%` } as React.CSSProperties}
+        />
         <span className="player__progress-time">
           {formatClock(Math.min(videoTime, displayDuration))} / {formatClock(displayDuration)}
         </span>
