@@ -1,0 +1,56 @@
+# Raw classifier output recorded 2026-11-08 in the browser: MediaPipe tasks-audio 0.10.14, yamnet.tflite float32, maxResults 3, scoreThreshold 0.15.
+# Clip: Sintel trailer 480p (Blender Foundation, CC BY 3.0), 51.9 s. Window start seconds, then "category:score" list ("-" = nothing above threshold).
+0.0 Silence:0.67
+1.0 -
+1.9 Eruption:0.20, Rumble:0.20
+2.9 Thunderstorm:0.26, Explosion:0.20, Thunder:0.20
+3.9 Wind:0.33, Wind noise (microphone):0.26
+4.9 Wind:0.50, Wind noise (microphone):0.41, Thunderstorm:0.20
+5.8 Wind:0.41, Wind noise (microphone):0.33, Vehicle:0.20
+6.8 Vehicle:0.67, Car:0.41, Motor vehicle (road):0.41
+7.8 Explosion:0.26
+8.8 Explosion:0.50, Artillery fire:0.41, Gunshot, gunfire:0.41
+9.8 Music:0.26
+10.7 Music:0.59
+11.7 Speech:0.33, Music:0.33
+12.7 Music:0.67, Speech:0.20
+13.7 Music:0.85
+14.6 Music:0.80
+15.6 Music:0.85
+16.6 Music:0.85
+17.6 Music:0.74
+18.5 Music:0.74
+19.5 Music:0.74
+20.5 Music:0.92
+21.4 Choir:0.50, A capella:0.33, Vocal music:0.26
+22.4 -
+23.4 Vocal music:0.26, Music:0.26, Singing:0.20
+24.4 Music:0.20
+25.4 Music:0.80
+26.3 Music:0.20
+27.3 Music:0.20
+28.3 Music:0.80
+29.3 Music:0.50
+30.2 Music:0.26
+31.2 Music:0.94
+32.2 Music:0.59
+33.1 Music:0.85, Scary music:0.20
+34.1 -
+35.1 Music:0.92
+36.1 Music:0.85
+37.0 Music:0.80, Speech:0.26
+38.0 Music:0.80, Speech:0.41
+39.0 Music:0.94
+40.0 Music:0.67
+41.0 Music:0.26
+41.9 Speech:0.50, Music:0.41
+42.9 Speech:0.80, Music:0.67
+43.9 Music:0.85, Scary music:0.33
+44.9 Music:0.26
+45.8 Music:0.67
+46.8 Music:0.92
+47.8 Music:0.85
+48.8 Music:0.50
+49.7 Silence:0.85
+50.7 Silence:0.80
+51.7 Silence:0.80

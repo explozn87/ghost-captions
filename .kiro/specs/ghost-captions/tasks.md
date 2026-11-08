@@ -15,13 +15,13 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
     - _Requirements: 3.1, 4.2, 5.1_
   - [ ] 2.2 `src/config/ghost.config.ts` with every threshold, prior and weight from design.md, each with a `why` string.
     - _Requirements: NFR-6_
-  - [ ] 2.3 `src/events/familyMap.ts` mapping all YAMNet category names to a family or `speech`; test that every name in the bundled label list is mapped.
+  - [ ] 2.3 `src/events/familyMap.ts` mapping all YAMNet category names (the full list is in `test/fixtures/yamnet_class_map.csv`, column `display_name`) to a family or `speech`; test that every name in the bundled label list is mapped.
     - _Requirements: 3.1, 3.2_
 
 - [ ] 3. Synthetic signals and fixtures
   - [ ] 3.1 `test/synth.ts`: generate stereo PCM with bursts (tone/noise), start/end, pan, gain, and travelling pan; return ground truth.
     - _Requirements: NFR-7_
-  - [ ] 3.2 Save the 11-08 Sintel trailer classifier output as `test/fixtures/sintel.windows.json` (category names and scores only, no audio).
+  - [ ] 3.2 Convert the recorded raw output `test/fixtures/sintel.windows.txt` into `test/fixtures/sintel.windows.json` (`ClassWindow[]`, end = start + 0.975) (category names and scores only, no audio).
     - _Requirements: 3.1_
 
 - [ ] 4. Measurement (pure)
