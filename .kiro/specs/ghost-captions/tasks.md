@@ -40,10 +40,10 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
   - [x] 5.4 Property tests P1–P4 from design.md, plus example tests on the Sintel fixture (families appear in scene order; speech is never a ghost).
     - _Requirements: 4.3, NFR-7_
 
-- [ ] 6. Export (pure)
-  - [ ] 6.1 `toWebVtt(track, lang)` with i18n phrases; no speech cues; direction phrase only for known sides.
+- [x] 6. Export (pure)
+  - [x] 6.1 `toWebVtt(track, lang)` with i18n phrases; no speech cues; direction phrase only for known sides.
     - _Requirements: 8.1, 8.2, 8.3_
-  - [ ] 6.2 Property test P5 with a small WebVTT parser.
+  - [x] 6.2 Property test P5 with a small WebVTT parser.
     - _Requirements: 8.1, NFR-7_
 
 - [ ] 7. i18n
