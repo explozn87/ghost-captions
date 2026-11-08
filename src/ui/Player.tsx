@@ -413,7 +413,11 @@ export function Player({
   // The evidence list on the end card (task 23.3): every counted occurrence up
   // to the clip's effective end (task 25.6), one row each with its time span,
   // family sprite and label.
-  const evidence = missedOccurrences(track.events, effectiveEnd, settings, dialogueCues);
+  // Spans are clipped to the effective end, so a trimmed demo never lists a
+  // sound as lasting past the point where the viewer stopped watching.
+  const evidence = missedOccurrences(track.events, effectiveEnd, settings, dialogueCues).map((o) =>
+    o.end > effectiveEnd ? { ...o, end: effectiveEnd } : o,
+  );
 
   // When the count rises, show "+1 <sound>" briefly and give the chip one
   // gentle scale pulse (none under reduced motion) (task 22.5). A reset to a
