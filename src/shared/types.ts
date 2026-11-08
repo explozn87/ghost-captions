@@ -15,14 +15,22 @@
 export type Family =
   | 'footsteps'
   | 'door'
-  | 'voice'
+  | 'knock'
+  | 'scream'
+  | 'laughter'
+  | 'crying'
   | 'tenseMusic'
   | 'calmMusic'
+  | 'singing'
   | 'impact'
+  | 'gunshot'
   | 'vehicle'
+  | 'siren'
   | 'animal'
-  | 'weather'
-  | 'alarm'
+  | 'wind'
+  | 'rain'
+  | 'thunder'
+  | 'fire'
   | 'glass'
   | 'unknown';
 
@@ -127,6 +135,8 @@ export interface EventTrack {
 /**
  * A ghost ready to draw (task 8.1). `layout()` produces these; `draw()`
  * consumes them. Kept here so overlay layout and drawing share one shape.
+ * Only point families become sprites; ambient families become {@link EdgeFog}
+ * (task 16.3).
  */
 export interface GhostSprite {
   family: Family;
@@ -143,5 +153,24 @@ export interface GhostSprite {
   /** Overall opacity in 0..1 (e.g. fading in/out at event edges). */
   opacity: number;
   /** The text label drawn with the ghost (never only motion/colour). */
+  label: string;
+}
+
+/** Which screen edge(s) an edge-fog vignette covers (task 16.3). */
+export type FogEdge = 'left' | 'right' | 'all';
+
+/**
+ * An ambient sound drawn as a vignette from the screen edges instead of a
+ * ghost (task 16.3). `wind, rain, thunder, tenseMusic, calmMusic` produce
+ * these. The central 60% of the frame is never covered; the text label sits
+ * near the relevant edge on a backing plate.
+ */
+export interface EdgeFog {
+  family: Family;
+  /** Whole-frame edges when the side is unknown, else only that side's edge. */
+  edge: FogEdge;
+  /** Current fog opacity in 0..1 after attack/decay smoothing. */
+  opacity: number;
+  /** The text label shown near the edge (never only motion/colour). */
   label: string;
 }

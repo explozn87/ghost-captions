@@ -77,17 +77,17 @@ describe('showsSpecificLabel / soundNoun (task 15.1)', () => {
   const ko = tables.ko;
 
   it('shows the specific label at or above the threshold', () => {
-    const e = makeEvent({ family: 'weather', topLabel: 'Wind', labelScore: 0.3 });
+    const e = makeEvent({ family: 'wind', topLabel: 'Wind', labelScore: 0.3 });
     expect(showsSpecificLabel(e)).toBe(true);
     expect(soundNoun(e, en, 'en')).toBe('Wind');
     expect(soundNoun(e, ko, 'ko')).toBe('바람');
   });
 
   it('falls back to the family word below the threshold', () => {
-    const e = makeEvent({ family: 'weather', topLabel: 'Wind', labelScore: 0.29 });
+    const e = makeEvent({ family: 'wind', topLabel: 'Wind', labelScore: 0.29 });
     expect(showsSpecificLabel(e)).toBe(false);
-    expect(soundNoun(e, en, 'en')).toBe(en.family.weather);
-    expect(soundNoun(e, ko, 'ko')).toBe(ko.family.weather);
+    expect(soundNoun(e, en, 'en')).toBe(en.family.wind);
+    expect(soundNoun(e, ko, 'ko')).toBe(ko.family.wind);
   });
 
   it('never shows a specific label for an unknown event (task 15.1)', () => {
@@ -114,7 +114,7 @@ describe('showsSpecificLabel / soundNoun (task 15.1)', () => {
 describe('specific labels flow into the overlay label and WebVTT cue (task 15.1)', () => {
   it('the sprite label uses the specific label plus direction and trend', () => {
     const e = makeEvent({
-      family: 'weather',
+      family: 'thunder',
       topLabel: 'Thunder',
       labelScore: 0.6,
       side: 'left',
@@ -178,10 +178,10 @@ describe('Sintel fixture shows Wind/바람 where the top label is Wind (task 15.
     labelsAvailable: true,
   });
 
-  it('a weather event in the trailer has Wind as its top label', () => {
+  it('a wind event in the trailer has Wind as its top label', () => {
     const windEvent = track.events.find((e) => e.topLabel === 'Wind');
     expect(windEvent).toBeDefined();
-    expect(windEvent!.family).toBe('weather');
+    expect(windEvent!.family).toBe('wind');
   });
 
   it('that event reads "Wind" in English and "바람" in Korean', () => {

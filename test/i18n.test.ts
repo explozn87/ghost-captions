@@ -53,8 +53,10 @@ describe('i18n key parity (task 7.1)', () => {
 
   it('covers every ghost family, side and trend used downstream', () => {
     const families: Family[] = [
-      'footsteps', 'door', 'voice', 'tenseMusic', 'calmMusic', 'impact',
-      'vehicle', 'animal', 'weather', 'alarm', 'glass', 'unknown',
+      'footsteps', 'door', 'knock', 'scream', 'laughter', 'crying',
+      'tenseMusic', 'calmMusic', 'singing', 'impact', 'gunshot',
+      'vehicle', 'siren', 'animal', 'wind', 'rain', 'thunder',
+      'fire', 'glass', 'unknown',
     ];
     const knownSides: Exclude<Side, 'centre-unknown'>[] = ['left', 'right'];
     const movingTrends: Exclude<Trend, 'steady'>[] = ['rising', 'falling'];

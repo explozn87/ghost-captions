@@ -63,8 +63,10 @@ function parseVtt(input: string): ParsedVtt {
 // --- arbitraries ----------------------------------------------------------
 
 const families: Family[] = [
-  'footsteps', 'door', 'voice', 'tenseMusic', 'calmMusic', 'impact',
-  'vehicle', 'animal', 'weather', 'alarm', 'glass', 'unknown',
+  'footsteps', 'door', 'knock', 'scream', 'laughter', 'crying',
+  'tenseMusic', 'calmMusic', 'singing', 'impact', 'gunshot',
+  'vehicle', 'siren', 'animal', 'wind', 'rain', 'thunder',
+  'fire', 'glass', 'unknown',
 ];
 const sides: Side[] = ['left', 'right', 'centre-unknown'];
 const trends: Trend[] = ['rising', 'falling', 'steady'];
@@ -185,7 +187,7 @@ describe('toWebVtt: honesty and shape (Req 8.1–8.3)', () => {
   it('emits no cue for a speech event (Req 8.1)', () => {
     const vtt = toWebVtt(
       trackOf(
-        { family: 'voice', isSpeech: true, start: 0, end: 1, side: 'left' },
+        { family: 'scream', isSpeech: true, start: 0, end: 1, side: 'left' },
         { family: 'impact', start: 1, end: 2 },
       ),
       'en',

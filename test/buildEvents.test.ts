@@ -221,6 +221,26 @@ describe('buildEvents: short-event drop with onset keep (Req 3.4)', () => {
   });
 });
 
+describe('buildEvents: merged-event topLabel is the highest-scoring window (task 16.2)', () => {
+  it('uses the single highest-scoring category across all merged windows, not the first/last', () => {
+    const W = 0.975;
+    // Three consecutive impact windows; the MIDDLE one scores highest, with a
+    // different (impact-family) category name. The merged event's topLabel must
+    // be that middle category, not the first or last window's.
+    const windows: ClassWindow[] = [
+      { start: 0, end: W, categories: [{ name: 'Boom', score: 0.4 }] },
+      { start: W, end: 2 * W, categories: [{ name: 'Explosion', score: 0.9 }] },
+      { start: 2 * W, end: 3 * W, categories: [{ name: 'Bang', score: 0.5 }] },
+    ];
+    const fs = flatFrames(3 * W + 0.5);
+    const track = buildEvents(windows, fs, { duration: 3 * W + 0.5, mono: true, labelsAvailable: true });
+    const impacts = track.events.filter((e) => e.family === 'impact');
+    expect(impacts).toHaveLength(1);
+    expect(impacts[0]!.topLabel).toBe('Explosion');
+    expect(impacts[0]!.labelScore).toBeCloseTo(0.9, 6);
+  });
+});
+
 describe('buildEvents: loudness property P4 (task 5.2, 5.4)', () => {
   it('P4: an event built over a louder burst has a loudness rank >= a quieter one', () => {
     fc.assert(
@@ -413,14 +433,14 @@ describe('buildEvents: Sintel fixture example tests (task 5.4)', () => {
   });
 
   it('families appear in the scene order of the trailer', () => {
-    // The trailer goes weather/wind -> vehicle -> impact(explosion/gunfire) ->
-    // music. Check those families appear and in that relative order.
+    // The trailer goes wind -> vehicle -> impact(explosion) -> music. Check
+    // those families appear and in that relative order.
     const firstOf = (fam: Family) => track.events.find((e) => e.family === fam)?.start ?? Infinity;
-    const weather = firstOf('weather');
+    const wind = firstOf('wind');
     const vehicle = firstOf('vehicle');
-    const impact = firstOf('impact');
+    const impact = Math.min(firstOf('impact'), firstOf('gunshot'));
     const music = Math.min(firstOf('calmMusic'), firstOf('tenseMusic'));
-    expect(weather).toBeLessThan(vehicle);
+    expect(wind).toBeLessThan(vehicle);
     expect(vehicle).toBeLessThan(impact);
     expect(impact).toBeLessThan(music);
   });

@@ -11,8 +11,10 @@ import type { Family } from '../src/shared/types.ts';
 
 /** The valid ghost families, used to check familyFor's output stays in-range. */
 const FAMILIES: ReadonlySet<Family> = new Set<Family>([
-  'footsteps', 'door', 'voice', 'tenseMusic', 'calmMusic', 'impact',
-  'vehicle', 'animal', 'weather', 'alarm', 'glass', 'unknown',
+  'footsteps', 'door', 'knock', 'scream', 'laughter', 'crying',
+  'tenseMusic', 'calmMusic', 'singing', 'impact', 'gunshot',
+  'vehicle', 'siren', 'animal', 'wind', 'rain', 'thunder',
+  'fire', 'glass', 'unknown',
 ]);
 
 /** Parse the `display_name` column, honouring quoted fields that contain commas. */
@@ -36,6 +38,17 @@ function readDisplayNames(): string[] {
 // drops a real mapping is caught. "Measured, not invented": an unclassifiable
 // sound is an honest unknown, never a guessed label.
 const INTENTIONAL_UNKNOWN: ReadonlySet<string> = new Set<string>([
+  // Non-speech vocal sounds that carry no clear scream/laugh/cry/song read, so
+  // they are an honest unknown rather than forced into a vocal family (task
+  // 16.1): breaths, coughs, body noises, and crowd/applause ambience.
+  'Whistling', 'Breathing', 'Wheeze', 'Snoring', 'Gasp', 'Pant', 'Snort',
+  'Cough', 'Throat clearing', 'Sneeze', 'Sniff', 'Chewing, mastication',
+  'Biting', 'Gargling', 'Stomach rumble', 'Burping, eructation', 'Hiccup',
+  'Fart', 'Hands', 'Finger snapping', 'Clapping', 'Heart sounds, heartbeat',
+  'Heart murmur', 'Cheering', 'Applause', 'Chatter', 'Crowd',
+  'Hubbub, speech noise, speech babble', 'Children playing',
+  // Household/kitchen, mechanisms, tools, liquids, generic effects, acoustic
+  // environments and noise: not in the fixed family set.
   'Dishes, pots, and pans', 'Cutlery, silverware', 'Chopping (food)',
   'Frying (food)', 'Microwave oven', 'Blender', 'Water tap, faucet',
   'Sink (filling or washing)', 'Bathtub (filling or washing)', 'Hair dryer',
@@ -106,10 +119,50 @@ describe('familyMap coverage (task 2.3)', () => {
     }
   });
 
-  it('maps screams and shouts to the voice family (Req 5.2)', () => {
-    expect(familyFor('Screaming')).toBe('voice');
-    expect(familyFor('Shout')).toBe('voice');
+  it('maps screams and shouts to the scream family (Req 5.2, task 16.1)', () => {
+    expect(familyFor('Screaming')).toBe('scream');
+    expect(familyFor('Shout')).toBe('scream');
     expect(isSpeechCategory('Screaming')).toBe(false);
+  });
+
+  it('splits the weather categories into wind, rain, thunder and fire (task 16.1)', () => {
+    expect(familyFor('Wind')).toBe('wind');
+    expect(familyFor('Rustling leaves')).toBe('wind');
+    expect(familyFor('Rain')).toBe('rain');
+    expect(familyFor('Raindrop')).toBe('rain');
+    expect(familyFor('Water')).toBe('rain');
+    expect(familyFor('Thunder')).toBe('thunder');
+    expect(familyFor('Thunderstorm')).toBe('thunder');
+    expect(familyFor('Fire')).toBe('fire');
+    expect(familyFor('Crackle')).toBe('fire');
+  });
+
+  it('splits gunfire into gunshot and keeps blasts/thuds as impact (task 16.1)', () => {
+    expect(familyFor('Gunshot, gunfire')).toBe('gunshot');
+    expect(familyFor('Machine gun')).toBe('gunshot');
+    expect(familyFor('Artillery fire')).toBe('gunshot');
+    expect(familyFor('Explosion')).toBe('impact');
+    expect(familyFor('Boom')).toBe('impact');
+    expect(familyFor('Thump, thud')).toBe('impact');
+  });
+
+  it('splits door from knock and routes sirens/bells to siren (task 16.1)', () => {
+    expect(familyFor('Door')).toBe('door');
+    expect(familyFor('Slam')).toBe('door');
+    expect(familyFor('Squeak')).toBe('door');
+    expect(familyFor('Knock')).toBe('knock');
+    expect(familyFor('Tap')).toBe('knock');
+    expect(familyFor('Siren')).toBe('siren');
+    expect(familyFor('Alarm')).toBe('siren');
+    expect(familyFor('Bell')).toBe('siren');
+    expect(familyFor('Buzzer')).toBe('siren');
+  });
+
+  it('routes the vocal families: laughter, crying and singing (task 16.1)', () => {
+    expect(familyFor('Laughter')).toBe('laughter');
+    expect(familyFor('Crying, sobbing')).toBe('crying');
+    expect(familyFor('Choir')).toBe('singing');
+    expect(familyFor('Singing')).toBe('singing');
   });
 
   it('falls back to unknown for a name that is not a category at all', () => {

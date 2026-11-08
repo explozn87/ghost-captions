@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import {
   layout,
+  edgeFogs,
+  fogDecayDuration,
   spriteLabel,
   CAPTION_BAND,
   MAX_TREMBLE_HZ,
@@ -9,19 +11,24 @@ import {
   type OverlaySettings,
 } from '../src/overlay/layout.ts';
 import { tables } from '../src/i18n/index.ts';
+import { ghostConfig } from '../src/config/ghost.config.ts';
 import type { Family, Side, SoundEvent, Trend } from '../src/shared/types.ts';
 
-// Task 8.1: `layout()` is pure, so every positioning rule is tested on
-// constructed events with known values. Property P6 from design.md — a sprite
-// is never placed in the bottom caption band — gets fast-check coverage over
-// arbitrary events, viewports and sizes. The other rules (side → band,
-// loudness → size, beat → capped tremble, reduced motion, muting, speech
-// skip, label contents) get direct example tests.
+// Task 8.1 (extended in task 16.3–16.4): `layout()`/`edgeFogs()` are pure, so
+// every positioning rule is tested on constructed events with known values.
+// Property P6 from design.md — a sprite is never placed in the bottom caption
+// band — gets fast-check coverage over arbitrary events, viewports and sizes.
+// The other rules (side → band, loudness → size, beat → capped tremble,
+// reduced motion, muting, speech skip, ambient→fog, label contents) get direct
+// example tests.
 
+// Only POINT families appear as sprites; ambient ones become edge fog.
 const FAMILIES: Family[] = [
-  'footsteps', 'door', 'voice', 'tenseMusic', 'calmMusic', 'impact',
-  'vehicle', 'animal', 'weather', 'alarm', 'glass', 'unknown',
+  'footsteps', 'door', 'knock', 'scream', 'laughter', 'crying',
+  'singing', 'impact', 'gunshot', 'vehicle', 'siren', 'animal',
+  'fire', 'glass', 'unknown',
 ];
+const AMBIENT: Family[] = ['wind', 'rain', 'thunder', 'tenseMusic', 'calmMusic'];
 const SIDES: Side[] = ['left', 'right', 'centre-unknown'];
 const TRENDS: Trend[] = ['rising', 'falling', 'steady'];
 
@@ -108,11 +115,14 @@ describe('layout: property P6 — never in the caption band (task 8.1)', () => {
 });
 
 describe('layout: band placement by side (task 8.1)', () => {
-  it('left sits in 15–30%, right in 70–85%, centre in 40–60%', () => {
+  it('left sits in 15–30%, right in 70–85%, centre in 40–60% once settled', () => {
     const vp: Viewport = { width: 1000, height: 1000 };
-    const left = layout([makeEvent({ side: 'left' })], 0, vp, defaultSettings)[0]!;
-    const right = layout([makeEvent({ side: 'right' })], 0, vp, defaultSettings)[0]!;
-    const centre = layout([makeEvent({ side: 'centre-unknown' })], 0, vp, defaultSettings)[0]!;
+    // Sample at t=1 (mid-event, past the 0.4 s enter glide) so the ghost has
+    // reached its settled band (task 16.4 adds the edge glide at the ends).
+    const ev = (side: Side) => makeEvent({ side, start: 0, end: 2 });
+    const left = layout([ev('left')], 1, vp, defaultSettings)[0]!;
+    const right = layout([ev('right')], 1, vp, defaultSettings)[0]!;
+    const centre = layout([ev('centre-unknown')], 1, vp, defaultSettings)[0]!;
     expect(left.x).toBeGreaterThanOrEqual(0.15);
     expect(left.x).toBeLessThanOrEqual(0.3);
     expect(right.x).toBeGreaterThanOrEqual(0.7);
@@ -182,16 +192,17 @@ describe('layout: travelling sound interpolates across bands (task 8.1)', () => 
   it('x moves from the left band toward the right band over the event', () => {
     const vp: Viewport = { width: 1000, height: 1000 };
     const ev = makeEvent({
-      side: 'left',
+      side: 'centre-unknown', // no edge glide, so the travel is the only motion
       start: 0,
-      end: 2,
+      end: 4,
       sideTrack: [
         { t: 0, side: 'left' },
-        { t: 2, side: 'right' },
+        { t: 4, side: 'right' },
       ],
     });
-    const early = layout([ev], 0.1, vp, defaultSettings)[0]!;
-    const late = layout([ev], 1.9, vp, defaultSettings)[0]!;
+    // Both samples are well inside the event (centre-unknown has no glide).
+    const early = layout([ev], 1, vp, defaultSettings)[0]!;
+    const late = layout([ev], 3, vp, defaultSettings)[0]!;
     expect(late.x).toBeGreaterThan(early.x);
   });
 });
@@ -199,7 +210,7 @@ describe('layout: travelling sound interpolates across bands (task 8.1)', () => 
 describe('layout: speech skipped and families muted (task 8.1)', () => {
   it('speech events produce no sprite', () => {
     const vp: Viewport = { width: 1000, height: 1000 };
-    const sprites = layout([makeEvent({ isSpeech: true, family: 'voice' })], 0, vp, defaultSettings);
+    const sprites = layout([makeEvent({ isSpeech: true, family: 'scream' })], 0, vp, defaultSettings);
     expect(sprites).toHaveLength(0);
   });
 
@@ -238,5 +249,116 @@ describe('spriteLabel: label contents (task 8.1)', () => {
     // Korean family name differs from English; just assert it is the ko table value.
     expect(sprite.label).toContain(tables.ko.family.footsteps);
     expect(sprite.label).toContain(tables.ko.side.right);
+  });
+});
+
+describe('layout: ambient families become edge fog, not sprites (task 16.3)', () => {
+  const vp: Viewport = { width: 1000, height: 1000 };
+
+  it('ambient events produce no point sprite', () => {
+    for (const family of AMBIENT) {
+      const sprites = layout([makeEvent({ family, start: 0, end: 2 })], 1, vp, defaultSettings);
+      expect(sprites).toHaveLength(0);
+    }
+  });
+
+  it('edgeFogs covers the whole frame for a centre-unknown ambient event', () => {
+    const ev = makeEvent({ family: 'wind', side: 'centre-unknown', loudness: 0.8, ominous: 0.6, start: 0, end: 5 });
+    const fogs = edgeFogs([ev], 3, defaultSettings);
+    expect(fogs).toHaveLength(1);
+    expect(fogs[0]!.edge).toBe('all');
+    expect(fogs[0]!.opacity).toBeGreaterThan(0);
+  });
+
+  it('edge fog follows the known side and never exceeds the opacity cap', () => {
+    const left = makeEvent({ family: 'thunder', side: 'left', loudness: 1, ominous: 1, start: 0, end: 5 });
+    const right = makeEvent({ id: 'e1', family: 'rain', side: 'right', loudness: 1, ominous: 1, start: 0, end: 5 });
+    const fogsLeft = edgeFogs([left], 3, defaultSettings);
+    const fogsRight = edgeFogs([right], 3, defaultSettings);
+    expect(fogsLeft[0]!.edge).toBe('left');
+    expect(fogsRight[0]!.edge).toBe('right');
+    for (const f of [...fogsLeft, ...fogsRight]) {
+      expect(f.opacity).toBeLessThanOrEqual(ghostConfig.edgeFogMaxOpacity.value + 1e-9);
+    }
+  });
+
+  it('fog rises from zero at the start (attack) and decays after the end (release)', () => {
+    const ev = makeEvent({ family: 'wind', side: 'centre-unknown', loudness: 1, ominous: 1, start: 1, end: 3 });
+    const atStart = edgeFogs([ev], 1.0, defaultSettings);
+    const settled = edgeFogs([ev], 2.9, defaultSettings);
+    const justAfter = edgeFogs([ev], 3.1, defaultSettings);
+    const longAfter = edgeFogs([ev], 3 + fogDecayDuration() + 0.5, defaultSettings);
+    // At the very start the attack has barely begun (near zero).
+    const startOpacity = atStart[0]?.opacity ?? 0;
+    expect(startOpacity).toBeLessThan(settled[0]!.opacity);
+    // After the end it is decaying but still visible, then gone.
+    expect(justAfter[0]!.opacity).toBeGreaterThan(0);
+    expect(longAfter).toHaveLength(0);
+  });
+
+  it('carries the ambient event label near the edge (never only colour)', () => {
+    const ev = makeEvent({ family: 'thunder', topLabel: 'Thunder', labelScore: 0.8, start: 0, end: 5 });
+    const fogs = edgeFogs([ev], 2, defaultSettings);
+    expect(fogs[0]!.label.length).toBeGreaterThan(0);
+    expect(fogs[0]!.label).toContain('Thunder');
+  });
+
+  it('a muted ambient family produces no fog', () => {
+    const ev = makeEvent({ family: 'wind', start: 0, end: 5 });
+    const fogs = edgeFogs([ev], 2, { ...defaultSettings, mutedFamilies: new Set<Family>(['wind']) });
+    expect(fogs).toHaveLength(0);
+  });
+
+  it('reduced motion shows a steady fog while active and none once ended', () => {
+    const ev = makeEvent({ family: 'rain', loudness: 0.8, ominous: 0.4, start: 1, end: 3 });
+    const reduced: OverlaySettings = { ...defaultSettings, reducedMotion: true };
+    const a = edgeFogs([ev], 1.1, reduced)[0]!.opacity;
+    const b = edgeFogs([ev], 2.9, reduced)[0]!.opacity;
+    // Steady: same opacity at any active time (no attack ramp under reduced motion).
+    expect(a).toBeCloseTo(b, 6);
+    // Nothing once ended.
+    expect(edgeFogs([ev], 3.5, reduced)).toHaveLength(0);
+  });
+});
+
+describe('layout: point ghosts enter from the edge and withdraw (task 16.4)', () => {
+  const vp: Viewport = { width: 1000, height: 1000 };
+
+  it('a known-side ghost starts off its edge, reaches its band, then withdraws', () => {
+    const ev = makeEvent({ family: 'footsteps', side: 'left', start: 0, end: 3 });
+    const entering = layout([ev], 0.01, vp, defaultSettings)[0]!;
+    const settled = layout([ev], 1.5, vp, defaultSettings)[0]!;
+    const withdrawing = layout([ev], 2.99, vp, defaultSettings)[0]!;
+    // Enters from off the left edge (x below the band), settles in the band,
+    // then withdraws back toward the edge.
+    expect(entering.x).toBeLessThan(0.15);
+    expect(settled.x).toBeGreaterThanOrEqual(0.15);
+    expect(settled.x).toBeLessThanOrEqual(0.3);
+    expect(withdrawing.x).toBeLessThan(settled.x);
+  });
+
+  it('a right-side ghost enters from off the right edge', () => {
+    const ev = makeEvent({ family: 'footsteps', side: 'right', start: 0, end: 3 });
+    const entering = layout([ev], 0.01, vp, defaultSettings)[0]!;
+    expect(entering.x).toBeGreaterThan(0.85);
+  });
+
+  it('a centre-unknown ghost fades in place (opacity), staying in its band', () => {
+    const ev = makeEvent({ family: 'footsteps', side: 'centre-unknown', start: 0, end: 3 });
+    const fadingIn = layout([ev], 0.01, vp, defaultSettings)[0]!;
+    const settled = layout([ev], 1.5, vp, defaultSettings)[0]!;
+    // Position stays in the centre band; only opacity ramps.
+    expect(fadingIn.x).toBeGreaterThanOrEqual(0.4);
+    expect(fadingIn.x).toBeLessThanOrEqual(0.6);
+    expect(fadingIn.opacity).toBeLessThan(settled.opacity);
+    expect(settled.opacity).toBeCloseTo(1, 5);
+  });
+
+  it('reduced motion skips the glide: a side ghost sits in its band from the start', () => {
+    const ev = makeEvent({ family: 'footsteps', side: 'left', start: 0, end: 3 });
+    const sp = layout([ev], 0.01, vp, { ...defaultSettings, reducedMotion: true })[0]!;
+    expect(sp.x).toBeGreaterThanOrEqual(0.15);
+    expect(sp.x).toBeLessThanOrEqual(0.3);
+    expect(sp.opacity).toBeCloseTo(1, 5);
   });
 });

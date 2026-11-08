@@ -111,7 +111,9 @@ interface MergedRun {
  * them is within `mergeGap` (Req 3.3). Speech windows are merged on their own
  * so a speech marker is one span, not many. Unknown windows also merge, so a
  * stretch of unclassifiable sound is one unknown ghost rather than a flicker.
- * The run keeps the highest-scoring label seen inside it.
+ * The run's `topLabel` is the single highest-scoring category across ALL the
+ * windows merged into it, not the first or last window's label (task 16.2), so
+ * a sustained sound is named by its clearest moment.
  */
 function mergeRuns(labels: WindowLabel[], cfg: GhostConfig): MergedRun[] {
   const gap = cfg.mergeGap.value;

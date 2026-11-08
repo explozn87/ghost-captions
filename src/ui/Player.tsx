@@ -17,8 +17,8 @@
 import { useEffect, useRef } from 'react';
 import type { EventTrack } from '../shared/types.ts';
 import { activeEvents } from '../events/buildEvents.ts';
-import { layout } from '../overlay/layout.ts';
-import { draw } from '../overlay/draw.ts';
+import { layout, edgeFogs, fogDecayDuration } from '../overlay/layout.ts';
+import { draw, preloadSpriteImages } from '../overlay/draw.ts';
 import type { Settings } from './settings.ts';
 import { toOverlaySettings } from './settings.ts';
 
@@ -94,6 +94,10 @@ export function Player({
     // only mismatch), so narrow it here.
     const ctx = raw as unknown as Parameters<typeof draw>[0];
 
+    // Preload the ghost sprite images once; draw falls back to silhouettes
+    // until each is ready (task 16.5).
+    preloadSpriteImages();
+
     let stopped = false;
     let rafHandle = 0;
     let rvfcHandle = 0;
@@ -108,9 +112,17 @@ export function Player({
       if (canvas.height !== h) canvas.height = h;
 
       const s = settingsRef.current;
+      const overlay = toOverlaySettings(s);
       const active = activeEvents(trackRef.current, time);
-      const sprites = layout(active, time, { width: w, height: h }, toOverlaySettings(s));
-      draw(ctx, sprites, time, s.reducedMotion);
+      const sprites = layout(active, time, { width: w, height: h }, overlay);
+      // Edge fog (task 16.3) needs ambient events that are active OR ended
+      // within the decay window, so their slow withdrawal still shows.
+      const decay = fogDecayDuration();
+      const fogCandidates = trackRef.current.events.filter(
+        (e) => e.start <= time && e.end + decay > time,
+      );
+      const fogs = edgeFogs(fogCandidates, time, overlay);
+      draw(ctx, sprites, fogs, time, s.reducedMotion);
 
       if (time !== lastReported) {
         lastReported = time;

@@ -1,21 +1,31 @@
 // YAMNet category name → ghost family (or speech) — the single mapping table
-// (Requirement 3.1, 3.2; task 2.3). One file, reviewed by the task-12 hook.
+// (Requirement 3.1, 3.2; task 2.3, updated for the 20-family set in task 16.1).
+// One file, reviewed by the task-12 hook.
 //
 // Keys are YAMNet `display_name` values exactly as they appear in the bundled
 // label list (test/fixtures/yamnet_class_map.csv). Any name NOT present here
 // falls back to `unknown` via familyFor(), so the table only needs the names
 // that carry a confident family.
 //
+// The 20 families (task 16.1) split the old broad ones into the specific sounds
+// a viewer most wants to tell apart:
+// - voice & scream → `scream` (screams/shouts/yells), `laughter`, `crying`,
+//   `singing`; plain spoken words stay `speech` (ordinary captions, Req 3.2);
+// - weather → `wind`, `rain`, `thunder`, `fire` (each its own ambient ghost);
+// - impact & explosion → `impact` (thuds/booms/breaking-force) vs `gunshot`
+//   (gunfire/artillery), so a gunshot is never softened into a generic thump;
+// - door & knock → `door` (doors/slams/squeaks) vs `knock` (knock/tap);
+// - alarm & siren → `siren`.
+// Pure music still splits into `tenseMusic` (scary/sad/angry) and `calmMusic`.
+//
 // Choices worth stating:
 // - Spoken-word categories (Speech, Conversation, Narration, Babbling,
 //   Whispering, Speech synthesizer) map to 'speech': they belong to ordinary
 //   captions, not ghosts (Req 3.2).
-// - Non-speech vocal sounds a hearing viewer would still "hear" as a presence
-//   (Screaming, Shout, Yell, Laughter, Crying, Gasp...) map to the 'voice'
-//   family, because the design lists scream under voice & scream (Req 5.2).
-// - Pure music categories split into 'tenseMusic' (scary/sad/angry/suspense)
-//   and 'calmMusic' (happy/tender/ambient and most instruments/genres), since
-//   only the mood changes the ghost, not the instrument.
+// - Non-speech human vocal sounds that are not a scream/laugh/cry/song (Sigh,
+//   Groan, Breathing, Cough, Cheering, applause, crowd...) map to the nearest
+//   of the four vocal families, or to `unknown` when they carry no clear
+//   emotional read, keeping "measured, not invented" (honesty over spectacle).
 
 import type { Family, FamilyOrSpeech } from '../shared/types.ts';
 
@@ -29,64 +39,45 @@ export const familyMap: Record<string, FamilyOrSpeech> = {
   'Speech synthesizer': 'speech',
   'Whispering': 'speech',
 
-  // --- voice: non-speech human vocal sounds (voice & scream) ---
-  'Shout': 'voice',
-  'Bellow': 'voice',
-  'Whoop': 'voice',
-  'Yell': 'voice',
-  'Children shouting': 'voice',
-  'Screaming': 'voice',
-  'Laughter': 'voice',
-  'Baby laughter': 'voice',
-  'Giggle': 'voice',
-  'Snicker': 'voice',
-  'Belly laugh': 'voice',
-  'Chuckle, chortle': 'voice',
-  'Crying, sobbing': 'voice',
-  'Baby cry, infant cry': 'voice',
-  'Whimper': 'voice',
-  'Wail, moan': 'voice',
-  'Sigh': 'voice',
-  'Singing': 'voice',
-  'Choir': 'voice',
-  'Yodeling': 'voice',
-  'Chant': 'voice',
-  'Mantra': 'voice',
-  'Child singing': 'voice',
-  'Synthetic singing': 'voice',
-  'Rapping': 'voice',
-  'Humming': 'voice',
-  'Groan': 'voice',
-  'Grunt': 'voice',
-  'Whistling': 'voice',
-  'Breathing': 'voice',
-  'Wheeze': 'voice',
-  'Snoring': 'voice',
-  'Gasp': 'voice',
-  'Pant': 'voice',
-  'Snort': 'voice',
-  'Cough': 'voice',
-  'Throat clearing': 'voice',
-  'Sneeze': 'voice',
-  'Sniff': 'voice',
-  'Chewing, mastication': 'voice',
-  'Biting': 'voice',
-  'Gargling': 'voice',
-  'Stomach rumble': 'voice',
-  'Burping, eructation': 'voice',
-  'Hiccup': 'voice',
-  'Fart': 'voice',
-  'Hands': 'voice',
-  'Finger snapping': 'voice',
-  'Clapping': 'voice',
-  'Heart sounds, heartbeat': 'voice',
-  'Heart murmur': 'voice',
-  'Cheering': 'voice',
-  'Applause': 'voice',
-  'Chatter': 'voice',
-  'Crowd': 'voice',
-  'Hubbub, speech noise, speech babble': 'voice',
-  'Children playing': 'voice',
+  // --- scream: screams, shouts, yells (voice & scream) ---
+  'Shout': 'scream',
+  'Bellow': 'scream',
+  'Whoop': 'scream',
+  'Yell': 'scream',
+  'Children shouting': 'scream',
+  'Screaming': 'scream',
+  'Groan': 'scream',
+  'Grunt': 'scream',
+  'Roar': 'scream',
+
+  // --- laughter ---
+  'Laughter': 'laughter',
+  'Baby laughter': 'laughter',
+  'Giggle': 'laughter',
+  'Snicker': 'laughter',
+  'Belly laugh': 'laughter',
+  'Chuckle, chortle': 'laughter',
+
+  // --- crying ---
+  'Crying, sobbing': 'crying',
+  'Baby cry, infant cry': 'crying',
+  'Whimper': 'crying',
+  'Wail, moan': 'crying',
+  'Sigh': 'crying',
+
+  // --- singing: sung voice (voice music) ---
+  'Singing': 'singing',
+  'Choir': 'singing',
+  'Yodeling': 'singing',
+  'Chant': 'singing',
+  'Mantra': 'singing',
+  'Child singing': 'singing',
+  'Synthetic singing': 'singing',
+  'Rapping': 'singing',
+  'Humming': 'singing',
+  'Vocal music': 'singing',
+  'A capella': 'singing',
+  'Lullaby': 'singing',
 
   // --- footsteps ---
   'Run': 'footsteps',
@@ -132,7 +123,6 @@ export const familyMap: Record<string, FamilyOrSpeech> = {
   'Honk': 'animal',
   'Wild animals': 'animal',
   'Roaring cats (lions, tigers)': 'animal',
-  'Roar': 'animal',
   'Bird': 'animal',
   'Bird vocalization, bird call, bird song': 'animal',
   'Chirp, tweet': 'animal',
@@ -270,8 +260,6 @@ export const familyMap: Record<string, FamilyOrSpeech> = {
   'Blues': 'calmMusic',
   'Music for children': 'calmMusic',
   'New-age music': 'calmMusic',
-  'Vocal music': 'calmMusic',
-  'A capella': 'calmMusic',
   'Music of Africa': 'calmMusic',
   'Afrobeat': 'calmMusic',
   'Christian music': 'calmMusic',
@@ -287,7 +275,6 @@ export const familyMap: Record<string, FamilyOrSpeech> = {
   'Theme music': 'calmMusic',
   'Jingle (music)': 'calmMusic',
   'Soundtrack music': 'calmMusic',
-  'Lullaby': 'calmMusic',
   'Video game music': 'calmMusic',
   'Christmas music': 'calmMusic',
   'Dance music': 'calmMusic',
@@ -301,24 +288,30 @@ export const familyMap: Record<string, FamilyOrSpeech> = {
   'Angry music': 'tenseMusic',
   'Scary music': 'tenseMusic',
 
-  // --- weather ---
-  'Wind': 'weather',
-  'Rustling leaves': 'weather',
-  'Wind noise (microphone)': 'weather',
-  'Thunderstorm': 'weather',
-  'Thunder': 'weather',
-  'Water': 'weather',
-  'Rain': 'weather',
-  'Raindrop': 'weather',
-  'Rain on surface': 'weather',
-  'Stream': 'weather',
-  'Waterfall': 'weather',
-  'Ocean': 'weather',
-  'Waves, surf': 'weather',
-  'Steam': 'weather',
-  'Gurgling': 'weather',
-  'Fire': 'weather',
-  'Crackle': 'weather',
+  // --- wind ---
+  'Wind': 'wind',
+  'Rustling leaves': 'wind',
+  'Wind noise (microphone)': 'wind',
+
+  // --- rain & water ---
+  'Water': 'rain',
+  'Rain': 'rain',
+  'Raindrop': 'rain',
+  'Rain on surface': 'rain',
+  'Stream': 'rain',
+  'Waterfall': 'rain',
+  'Ocean': 'rain',
+  'Waves, surf': 'rain',
+  'Steam': 'rain',
+  'Gurgling': 'rain',
+
+  // --- thunder ---
+  'Thunderstorm': 'thunder',
+  'Thunder': 'thunder',
+
+  // --- fire ---
+  'Fire': 'fire',
+  'Crackle': 'fire',
 
   // --- vehicle ---
   'Vehicle': 'vehicle',
@@ -331,7 +324,7 @@ export const familyMap: Record<string, FamilyOrSpeech> = {
   'Car': 'vehicle',
   'Vehicle horn, car horn, honking': 'vehicle',
   'Toot': 'vehicle',
-  'Car alarm': 'alarm',
+  'Car alarm': 'siren',
   'Power windows, electric windows': 'vehicle',
   'Skidding': 'vehicle',
   'Tire squeal': 'vehicle',
@@ -343,10 +336,10 @@ export const familyMap: Record<string, FamilyOrSpeech> = {
   'Reversing beeps': 'vehicle',
   'Ice cream truck, ice cream van': 'vehicle',
   'Bus': 'vehicle',
-  'Emergency vehicle': 'alarm',
-  'Police car (siren)': 'alarm',
-  'Ambulance (siren)': 'alarm',
-  'Fire engine, fire truck (siren)': 'alarm',
+  'Emergency vehicle': 'siren',
+  'Police car (siren)': 'siren',
+  'Ambulance (siren)': 'siren',
+  'Fire engine, fire truck (siren)': 'siren',
   'Motorcycle': 'vehicle',
   'Traffic noise, roadway noise': 'vehicle',
   'Rail transport': 'vehicle',
@@ -376,53 +369,57 @@ export const familyMap: Record<string, FamilyOrSpeech> = {
   'Idling': 'vehicle',
   'Accelerating, revving, vroom': 'vehicle',
 
-  // --- door & knock ---
+  // --- door ---
   'Door': 'door',
   'Doorbell': 'door',
   'Ding-dong': 'door',
   'Sliding door': 'door',
   'Slam': 'door',
-  'Knock': 'door',
-  'Tap': 'door',
   'Squeak': 'door',
   'Cupboard open or close': 'door',
   'Drawer open or close': 'door',
 
-  // --- alarm & siren ---
-  'Alarm': 'alarm',
-  'Telephone': 'alarm',
-  'Telephone bell ringing': 'alarm',
-  'Ringtone': 'alarm',
-  'Telephone dialing, DTMF': 'alarm',
-  'Dial tone': 'alarm',
-  'Busy signal': 'alarm',
-  'Alarm clock': 'alarm',
-  'Siren': 'alarm',
-  'Civil defense siren': 'alarm',
-  'Buzzer': 'alarm',
-  'Smoke detector, smoke alarm': 'alarm',
-  'Fire alarm': 'alarm',
-  'Foghorn': 'alarm',
-  'Whistle': 'alarm',
-  'Steam whistle': 'alarm',
-  // Bells and chimes: ringing/signalling sounds, closest to alarm & siren.
-  'Bell': 'alarm',
-  'Church bell': 'alarm',
-  'Jingle bell': 'alarm',
-  'Bicycle bell': 'alarm',
-  'Tuning fork': 'alarm',
-  'Chime': 'alarm',
-  'Wind chime': 'alarm',
-  'Change ringing (campanology)': 'alarm',
-  'Jingle, tinkle': 'alarm',
+  // --- knock ---
+  'Knock': 'knock',
+  'Tap': 'knock',
+
+  // --- siren & alarm ---
+  'Alarm': 'siren',
+  'Telephone': 'siren',
+  'Telephone bell ringing': 'siren',
+  'Ringtone': 'siren',
+  'Telephone dialing, DTMF': 'siren',
+  'Dial tone': 'siren',
+  'Busy signal': 'siren',
+  'Alarm clock': 'siren',
+  'Siren': 'siren',
+  'Civil defense siren': 'siren',
+  'Buzzer': 'siren',
+  'Smoke detector, smoke alarm': 'siren',
+  'Fire alarm': 'siren',
+  'Foghorn': 'siren',
+  'Whistle': 'siren',
+  'Steam whistle': 'siren',
+  // Bells and chimes: ringing/signalling sounds, closest to siren & alarm.
+  'Bell': 'siren',
+  'Church bell': 'siren',
+  'Jingle bell': 'siren',
+  'Bicycle bell': 'siren',
+  'Tuning fork': 'siren',
+  'Chime': 'siren',
+  'Wind chime': 'siren',
+  'Change ringing (campanology)': 'siren',
+  'Jingle, tinkle': 'siren',
+
+  // --- gunshot: gunfire and artillery ---
+  'Gunshot, gunfire': 'gunshot',
+  'Machine gun': 'gunshot',
+  'Fusillade': 'gunshot',
+  'Artillery fire': 'gunshot',
+  'Cap gun': 'gunshot',
 
   // --- impact & explosion ---
   'Explosion': 'impact',
-  'Gunshot, gunfire': 'impact',
-  'Machine gun': 'impact',
-  'Fusillade': 'impact',
-  'Artillery fire': 'impact',
-  'Cap gun': 'impact',
   'Fireworks': 'impact',
   'Firecracker': 'impact',
   'Burst, pop': 'impact',

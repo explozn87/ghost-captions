@@ -2,6 +2,7 @@ import { describe, it, expect, expectTypeOf } from 'vitest';
 import type {
   Family, FamilyOrSpeech, Side, Trend,
   StereoPcm, ClassWindow, Frame, SoundEvent, EventTrack, GhostSprite,
+  EdgeFog, FogEdge,
 } from '../src/shared/types.ts';
 
 // Task 2.1: the shared types match the data-types section of design.md. These
@@ -12,8 +13,10 @@ import type {
 describe('shared types (task 2.1)', () => {
   it('Family is the fixed set from Req 3.1 (speech is not a family)', () => {
     expectTypeOf<Family>().toEqualTypeOf<
-      | 'footsteps' | 'door' | 'voice' | 'tenseMusic' | 'calmMusic' | 'impact'
-      | 'vehicle' | 'animal' | 'weather' | 'alarm' | 'glass' | 'unknown'
+      | 'footsteps' | 'door' | 'knock' | 'scream' | 'laughter' | 'crying'
+      | 'tenseMusic' | 'calmMusic' | 'singing' | 'impact' | 'gunshot'
+      | 'vehicle' | 'siren' | 'animal' | 'wind' | 'rain' | 'thunder'
+      | 'fire' | 'glass' | 'unknown'
     >();
   });
 
@@ -92,16 +95,28 @@ describe('shared types (task 2.1)', () => {
 
   it('GhostSprite always carries a text label (never only motion/colour)', () => {
     const s: GhostSprite = {
-      family: 'voice',
+      family: 'scream',
       x: 0.2,
       y: 0.3,
       scale: 1.2,
       fog: 0.4,
       trembleHz: 0,
       opacity: 1,
-      label: 'voice & scream, from the left',
+      label: 'scream, from the left',
     };
     expectTypeOf<GhostSprite['label']>().toEqualTypeOf<string>();
     expect(s.label.length).toBeGreaterThan(0);
+  });
+
+  it('EdgeFog carries an edge, opacity and a text label (task 16.3)', () => {
+    const f: EdgeFog = {
+      family: 'thunder',
+      edge: 'all',
+      opacity: 0.3,
+      label: 'thunder',
+    };
+    expectTypeOf<EdgeFog['edge']>().toEqualTypeOf<FogEdge>();
+    expectTypeOf<FogEdge>().toEqualTypeOf<'left' | 'right' | 'all'>();
+    expect(f.label.length).toBeGreaterThan(0);
   });
 });

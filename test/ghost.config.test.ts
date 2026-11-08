@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ghostConfig, type Tuned } from '../src/config/ghost.config.ts';
+import { ghostConfig, isAmbientFamily, type Tuned } from '../src/config/ghost.config.ts';
 import type { Family } from '../src/shared/types.ts';
 
 // Task 2.2: every threshold, prior and weight lives in one module and carries a
@@ -8,8 +8,10 @@ import type { Family } from '../src/shared/types.ts';
 // ranges hold.
 
 const ALL_FAMILIES: Family[] = [
-  'footsteps', 'door', 'voice', 'tenseMusic', 'calmMusic', 'impact',
-  'vehicle', 'animal', 'weather', 'alarm', 'glass', 'unknown',
+  'footsteps', 'door', 'knock', 'scream', 'laughter', 'crying',
+  'tenseMusic', 'calmMusic', 'singing', 'impact', 'gunshot',
+  'vehicle', 'siren', 'animal', 'wind', 'rain', 'thunder',
+  'fire', 'glass', 'unknown',
 ];
 
 function expectHasWhy(t: Tuned): void {
@@ -79,5 +81,35 @@ describe('ghost.config (task 2.2)', () => {
     expect(ghostConfig.priors.tenseMusic.value).toBeGreaterThan(
       ghostConfig.priors.calmMusic.value,
     );
+  });
+
+  it('declares exactly the five ambient families with a why (task 16.3)', () => {
+    expect([...ghostConfig.ambientFamilies.value].sort()).toEqual(
+      ['calmMusic', 'rain', 'tenseMusic', 'thunder', 'wind'].sort(),
+    );
+    expect(ghostConfig.ambientFamilies.why.trim().length).toBeGreaterThan(0);
+    // isAmbientFamily reads that single list.
+    for (const f of ['wind', 'rain', 'thunder', 'tenseMusic', 'calmMusic'] as Family[]) {
+      expect(isAmbientFamily(f)).toBe(true);
+    }
+    for (const f of ['footsteps', 'gunshot', 'siren', 'glass', 'unknown'] as Family[]) {
+      expect(isAmbientFamily(f)).toBe(false);
+    }
+  });
+
+  it('caps edge-fog opacity at or below 0.45 and carries a why on each fog value (task 16.3)', () => {
+    expectHasWhy(ghostConfig.edgeFogAttack);
+    expectHasWhy(ghostConfig.edgeFogRelease);
+    expectHasWhy(ghostConfig.edgeFogMaxOpacity);
+    expect(ghostConfig.edgeFogMaxOpacity.value).toBeLessThanOrEqual(0.45);
+    expect(ghostConfig.edgeFogMaxOpacity.value).toBeGreaterThan(0);
+    expect(ghostConfig.edgeFogAttack.value).toBeGreaterThan(0);
+    expect(ghostConfig.edgeFogRelease.value).toBeGreaterThan(0);
+    // Attack is faster than release: fog swells in, lingers out (task 16.3).
+    expect(ghostConfig.edgeFogAttack.value).toBeGreaterThan(ghostConfig.edgeFogRelease.value);
+  });
+
+  it('ranks gunshot at least as ominous as impact (gunfire never softened, task 16.1)', () => {
+    expect(ghostConfig.priors.gunshot.value).toBeGreaterThanOrEqual(ghostConfig.priors.impact.value);
   });
 });
