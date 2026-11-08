@@ -71,7 +71,7 @@ a { color: var(--accent); }
 
 /* Centred end card shown when the video finishes (task 22.5). */
 .player__endcard { position: absolute; inset: 0; z-index: 3; display: grid; place-content: center;
-  gap: 14px; text-align: center; background: rgba(10,12,18,.72); padding: 24px; }
+  gap: 14px; text-align: center; background: rgba(10,12,18,.72); padding: 24px; line-height: 1.4; }
 .player__endcard-text { margin: 0; font-size: 1.15rem; max-width: 28ch; }
 .player__endcard-again { justify-self: center; }
 
