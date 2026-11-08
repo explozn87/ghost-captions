@@ -225,7 +225,10 @@ export function Player({
     const tick = () => {
       if (stopped) return;
       renderAt(video.currentTime);
-      if (rvfc.requestVideoFrameCallback) {
+      // A paused video presents no new frames, so requestVideoFrameCallback
+      // would never fire and a mute/unmute fade (task 21.1) would freeze.
+      // Fall back to rAF while paused; playback switches back on the next tick.
+      if (rvfc.requestVideoFrameCallback && !video.paused) {
         rvfcHandle = rvfc.requestVideoFrameCallback(() => tick());
       } else {
         rafHandle = requestAnimationFrame(tick);
