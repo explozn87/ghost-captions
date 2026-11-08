@@ -287,3 +287,71 @@ describe('Player end-card evidence, compare, endAt (tasks 25.1, 25.5, 25.6, 25.7
     expect(screen.getByText(strings.ui.compareCaptionsOnly)).toBeInTheDocument();
   });
 });
+
+describe('Player compare & first-click (tasks 27.1, 27.2)', () => {
+  it('the loudest point occurrence row is tagged "Try this first" (task 27.2)', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    // The gunshot (loudness 0.9) is the loudest point occurrence, so its row
+    // carries the tag. Only one row is tagged.
+    const tags = screen.getAllByText(strings.ui.tryThisFirst);
+    expect(tags).toHaveLength(1);
+  });
+
+  it('the captions-only pass shows the no-cue plate text (task 27.1)', () => {
+    const strings = t('en');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    act(() => {
+      screen.getAllByRole('button', { name: strings.ui.compare })[0]!.click();
+    });
+    // No subtitle file loaded, so the generic plate line is shown.
+    expect(screen.getByText(strings.ui.compareCaptionsOnlyPlate)).toBeInTheDocument();
+  });
+
+  it('with a subtitle cue over the sound, the captions-only plate shows that cue (task 27.1)', () => {
+    const strings = t('en');
+    const dialogue = [{ start: 0.5, end: 2.5, text: 'Hello there' }];
+    render(
+      <Player
+        src="blob:mock"
+        track={soundTrack}
+        dialogue={dialogue}
+        settings={settingsWith('auto')}
+        strings={strings}
+      />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    // Compare the gunshot (start 1 s): a cue covers it, so its text shows.
+    act(() => {
+      screen.getAllByRole('button', { name: strings.ui.compare })[0]!.click();
+    });
+    expect(screen.getByText('Hello there')).toBeInTheDocument();
+    expect(screen.queryByText(strings.ui.compareCaptionsOnlyPlate)).toBeNull();
+  });
+
+  it('shows the compare plate text in Korean (task 27.1)', () => {
+    const strings = t('ko');
+    render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto', 'ko')} strings={strings} />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    act(() => {
+      screen.getAllByRole('button', { name: strings.ui.compare })[0]!.click();
+    });
+    expect(screen.getByText(strings.ui.compareCaptionsOnlyPlate)).toBeInTheDocument();
+  });
+});

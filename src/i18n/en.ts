@@ -124,6 +124,9 @@ export const en: Strings = {
     compare: 'Compare',
     compareCaptionsOnly: 'Captions only',
     compareWithGhosts: 'With Ghost Captions',
+    compareCaptionsOnlyPlate: 'Captions only — these captions say nothing about this sound.',
+    compareStep: '{step}/{total}',
+    tryThisFirst: 'Try this first',
     missedBasisDemoNoFile:
       'This demo has no subtitle file, so we counted against captions that contain dialogue only.',
 

@@ -69,31 +69,54 @@ a { color: var(--accent); }
 .player__missed--pulse { animation: missed-pulse .4s ease; }
 @keyframes missed-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.12); } 100% { transform: scale(1); } }
 
-/* Centred end card shown when the video finishes (task 22.5, 23.3). */
-.player__endcard { position: absolute; inset: 0; z-index: 3; display: grid; place-content: center;
-  gap: 10px; text-align: center; background: rgba(10,12,18,.72); padding: 24px; line-height: 1.4; }
-.player__endcard-text { margin: 0; font-size: 1.15rem; max-width: 36ch; word-break: keep-all; }
-.player__endcard-basis { margin: 0; color: var(--muted); font-size: .9rem; }
-.player__endcard-heading { margin: 8px 0 0; font-size: .95rem; color: var(--muted); font-weight: 600; }
+/* Centred end card shown when the video finishes (task 22.5, 23.3). The card
+   always fits the player (task 27.4): a flex column capped at the player
+   height, with the evidence list scrolling inside it and "Watch again" pinned
+   below the scroll area so it stays visible in the inline player and in full
+   screen. */
+.player__endcard { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; text-align: center;
+  background: rgba(10,12,18,.72); padding: 24px; line-height: 1.4; max-height: 100%; overflow: hidden; }
+.player__endcard-text { margin: 0; font-size: 1.15rem; max-width: 36ch; word-break: keep-all; flex: none; }
+.player__endcard-basis { margin: 0; color: var(--muted); font-size: .9rem; flex: none; }
+.player__endcard-heading { margin: 8px 0 0; font-size: .95rem; color: var(--muted); font-weight: 600; flex: none; }
 /* Evidence list of counted occurrences (task 23.3): rows are buttons with
-   text, keyboard reachable; more than 8 rows scroll inside the card. */
+   text, keyboard reachable; more than 8 rows scroll inside the card. The list
+   shrinks (flex: 1 1 auto, min-height: 0) so "Watch again" below it is never
+   pushed off the card (task 27.4). */
 .player__endcard-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px;
-  max-height: calc(8 * 34px); overflow-y: auto; width: min(32ch, 80vw); justify-self: center; }
+  max-height: calc(8 * 34px); min-height: 0; flex: 1 1 auto; overflow-y: auto;
+  width: min(32ch, 80vw); justify-self: center; }
 .player__endcard-row { display: flex; align-items: center; gap: 10px; flex: 1; text-align: left;
   padding: 5px 10px; }
 .player__endcard-item { display: flex; align-items: stretch; gap: 6px; }
+/* The loudest point occurrence: the one obvious first click (task 27.2). */
+.player__endcard-item--first { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 8px; }
+.player__endcard-firsttag { flex: none; font-size: .72rem; color: var(--bg); background: var(--accent);
+  border-radius: 999px; padding: 1px 8px; font-weight: 600; margin-left: auto; }
 .player__endcard-compare { flex: none; font-size: .8rem; padding: 4px 10px; }
+/* The primary Compare button on the "Try this first" row (task 27.2). */
+.player__endcard-compare--primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+.player__endcard-compare--primary:hover { filter: brightness(1.08); }
 .player__endcard-time { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 3.5ch; }
 .player__endcard-sprite { flex: none; object-fit: contain; }
 .player__endcard-label { flex: 1; }
-.player__endcard-again { justify-self: center; margin-top: 4px; }
+.player__endcard-again { justify-self: center; margin-top: 4px; flex: none; }
 
-/* Compare chip (task 25.5): names the current pass during a Compare run —
-   "Captions only" then "With Ghost Captions". Centred near the top so it reads
-   over the picture; text carries the meaning. */
+/* Compare chips (tasks 25.5, 27.1): name the current pass during a Compare run
+   — "Captions only" then "With Ghost Captions" — each with a step marker and
+   large text so it reads over the picture at a glance; text carries the
+   meaning. The caption-band plate below spells out that the captions say
+   nothing about this sound (or shows a loaded cue). */
 .player__compare-chip { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 3;
-  font-size: .9rem; background: rgba(15,17,21,.88); border: 1px solid var(--accent); color: var(--text);
-  border-radius: 999px; padding: 5px 14px; }
+  font-size: clamp(20px, 3.4vh, 30px); background: rgba(15,17,21,.9); border: 2px solid var(--accent);
+  color: var(--text); border-radius: 999px; padding: 6px 18px; display: flex; align-items: center; gap: 10px; }
+.player__compare-chip--ghosts { border-color: var(--accent); }
+.player__compare-step { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); }
+.player__compare-plate { position: absolute; left: 50%; bottom: 8%; transform: translateX(-50%); z-index: 3;
+  max-width: 84%; text-align: center; font-size: clamp(16px, 2.6vh, 22px);
+  background: rgba(10,12,18,.9); border: 1px solid var(--line); color: var(--text);
+  border-radius: 10px; padding: 8px 16px; line-height: 1.35; }
 
 @media (prefers-reduced-motion: reduce) {
   .player__missed--pulse { animation: none; }

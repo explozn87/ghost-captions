@@ -19,9 +19,10 @@ import { useEffect, useRef, useState } from 'react';
 import type { DialogueCue, EventTrack } from '../shared/types.ts';
 import { activeEvents } from '../events/buildEvents.ts';
 import { layout, edgeFogs, fogDecayDuration } from '../overlay/layout.ts';
-import { draw, preloadSpriteImages, measureDialogueBandFrac, spriteImageUrl } from '../overlay/draw.ts';
+import { draw, preloadSpriteImages, measureDialogueBandFrac, spriteImageUrl, isDarkFrame } from '../overlay/draw.ts';
 import { activeDialogueCue } from '../subtitles/parse.ts';
 import { ghostConfig } from '../config/ghost.config.ts';
+import { isAmbientFamily } from '../config/ghost.config.ts';
 import type { Strings } from '../i18n/index.ts';
 import { soundNoun } from '../i18n/soundLabel.ts';
 import type { Settings } from './settings.ts';
@@ -149,6 +150,9 @@ export function Player({
   // chip. The draw loop reads `compareRef` to override the overlay target.
   const [comparePhase, setComparePhase] = useState<ComparePhase | null>(null);
   const compareRef = useRef<{ plan: ReturnType<typeof comparePlan>; startWall: number } | null>(null);
+  // The occurrence start being compared (task 27.1), so the captions-only plate
+  // can show a loaded subtitle cue overlapping it instead of the generic line.
+  const [compareStart, setCompareStart] = useState<number | null>(null);
 
   // Show-when state (task 21.1/21.2): whether the video is currently silent to
   // the viewer (muted or zero volume), driven by the `volumechange` event (no
@@ -175,6 +179,13 @@ export function Player({
   // it fades independently of React renders.
   const overlayAlphaRef = useRef(1);
   const lastFrameWallRef = useRef(0);
+  // Dark-frame sampling (task 27.3): a tiny offscreen canvas and the last
+  // sampled "is the video frame dark" result, refreshed at most every 0.5 s.
+  // Labels get a size boost on a dark scene so a pale label stays readable.
+  // The downsample is read on-device only; nothing leaves the browser.
+  const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const darkFrameRef = useRef(false);
+  const lastSampleWallRef = useRef(0);
 
   // Expose a seek function to the parent for the timeline/event list.
   useEffect(() => {
@@ -339,10 +350,40 @@ export function Player({
       else if (current > target) nextAlpha = Math.max(target, current - step);
       overlayAlphaRef.current = nextAlpha;
 
+      // Sample whether the current video frame is dark (task 27.3) at most
+      // every 0.5 s: draw a tiny 16×9 downsample of the video to an offscreen
+      // canvas, read it back and ask `isDarkFrame`. If reading the frame is not
+      // possible (no canvas backend, or the video is not ready), the last
+      // result stands. The downsample is read on-device only.
+      if (now - lastSampleWallRef.current >= 500) {
+        lastSampleWallRef.current = now;
+        try {
+          if (video.readyState >= 2 && video.videoWidth > 0) {
+            let sc = sampleCanvasRef.current;
+            if (!sc) {
+              sc = document.createElement('canvas');
+              sc.width = 16;
+              sc.height = 9;
+              sampleCanvasRef.current = sc;
+            }
+            const sctx = sc.getContext('2d', { willReadFrequently: true });
+            if (sctx) {
+              sctx.drawImage(video, 0, 0, sc.width, sc.height);
+              const data = sctx.getImageData(0, 0, sc.width, sc.height).data;
+              darkFrameRef.current = isDarkFrame(data);
+            }
+          }
+        } catch {
+          // Reading the frame can throw (tainted canvas, no backend); keep the
+          // last result rather than failing the overlay.
+        }
+      }
+
       draw(ctx, sprites, fogs, time, s.reducedMotion, {
         captionBandFrac,
         dialogue: dialogueText,
         overlayAlpha: nextAlpha,
+        darkFrame: darkFrameRef.current,
       });
 
       if (time !== lastReported) {
@@ -419,6 +460,22 @@ export function Player({
     o.end > effectiveEnd ? { ...o, end: effectiveEnd } : o,
   );
 
+  // The one obvious first click (task 27.2): the loudest POINT occurrence in
+  // the evidence list (ambient sounds are atmosphere, a point sound like the
+  // gunshot is the clearest "the captions missed this"). Its row is
+  // highlighted, tagged "Try this first", and its Compare button is the primary
+  // one that receives focus when the end card opens. -1 when the list has no
+  // point occurrence.
+  let firstTryIndex = -1;
+  let firstTryLoudness = -Infinity;
+  evidence.forEach((occ, i) => {
+    if (isAmbientFamily(occ.family)) return;
+    if (occ.loudness > firstTryLoudness) {
+      firstTryLoudness = occ.loudness;
+      firstTryIndex = i;
+    }
+  });
+
   // When the count rises, show "+1 <sound>" briefly and give the chip one
   // gentle scale pulse (none under reduced motion) (task 22.5). A reset to a
   // lower count (seeking back, watch again) just updates the baseline without a
@@ -438,6 +495,14 @@ export function Player({
       clearTimeout(pulseId);
     };
   }, [missed, newestNoun, settings.reducedMotion]);
+
+  // The captions-only caption-band plate text during a compare (task 27.1): if
+  // a loaded subtitle cue overlaps the compared occurrence, show that cue's
+  // text (the captions do describe this moment); otherwise the generic line
+  // spelling out that the captions say nothing about this sound.
+  const compareCue =
+    compareStart != null ? activeDialogueCue(dialogueCues, compareStart) : null;
+  const compareCaptionsPlateText = compareCue?.text ?? strings.ui.compareCaptionsOnlyPlate;
 
   const watchAgain = () => {
     const video = videoRef.current;
@@ -476,6 +541,7 @@ export function Player({
     compareRef.current = { plan, startWall: (typeof performance !== 'undefined' ? performance.now() : Date.now()) };
     setEnded(false);
     setComparePhase('captionsOnly');
+    setCompareStart(start);
     const step = () => {
       const run = compareRef.current;
       const v = videoRef.current;
@@ -487,6 +553,7 @@ export function Player({
         // Finished: stop the run, pause and return to the end card.
         compareRef.current = null;
         setComparePhase(null);
+        setCompareStart(null);
         v.pause();
         setEnded(true);
         return;
@@ -512,6 +579,16 @@ export function Player({
       compareRef.current = null;
     };
   }, []);
+
+  // Focus the primary "Try this first" Compare button when the end card opens
+  // (task 27.2), so a keyboard user lands on the one obvious first click. Only
+  // while the end card is shown and there is a highlighted point row.
+  const primaryCompareRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (ended && overlayVisible && firstTryIndex >= 0) {
+      primaryCompareRef.current?.focus();
+    }
+  }, [ended, overlayVisible, firstTryIndex]);
 
   return (
     <div
@@ -557,14 +634,34 @@ export function Player({
         {chipText}
       </button>
 
-      {/* Compare chip (task 25.5): during a Compare run, name the pass — first
-          "Captions only" (overlay hidden), then "With Ghost Captions" (overlay
-          shown). Text carries the meaning, not only the state. */}
+      {/* Compare chips (tasks 25.5, 27.1): during a Compare run, name the pass
+          — first "Captions only" (overlay hidden), then "With Ghost Captions"
+          (overlay shown) — each with a step marker "1/2" / "2/2" and large
+          text so a judge reads it at a glance. During the captions-only pass a
+          caption-band plate spells out that the captions say nothing about this
+          sound; if a loaded subtitle cue overlaps the moment, that cue's text
+          is shown instead. Text carries the meaning, not only the state. */}
       {comparePhase && (
-        <div className="player__compare-chip" role="status" aria-live="polite">
+        <div
+          className={`player__compare-chip player__compare-chip--${
+            comparePhase === 'captionsOnly' ? 'captions' : 'ghosts'
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="player__compare-step">
+            {strings.ui.compareStep
+              .replace('{step}', comparePhase === 'captionsOnly' ? '1' : '2')
+              .replace('{total}', '2')}
+          </span>{' '}
           {comparePhase === 'captionsOnly'
             ? strings.ui.compareCaptionsOnly
             : strings.ui.compareWithGhosts}
+        </div>
+      )}
+      {comparePhase === 'captionsOnly' && (
+        <div className="player__compare-plate" role="status" aria-live="polite">
+          {compareCaptionsPlateText}
         </div>
       )}
 
@@ -590,10 +687,16 @@ export function Player({
             <>
               <h3 className="player__endcard-heading">{strings.ui.missedListHeading}</h3>
               <ul className="player__endcard-list">
-                {evidence.map((occ) => {
+                {evidence.map((occ, i) => {
                   const label = occurrenceNoun(occ, strings, settings.lang);
+                  const isFirstTry = i === firstTryIndex;
                   return (
-                    <li key={`${occ.group}-${occ.start}`} className="player__endcard-item">
+                    <li
+                      key={`${occ.group}-${occ.start}`}
+                      className={`player__endcard-item${
+                        isFirstTry ? ' player__endcard-item--first' : ''
+                      }`}
+                    >
                       <button
                         type="button"
                         className="player__endcard-row"
@@ -609,10 +712,18 @@ export function Player({
                           height={20}
                         />
                         <span className="player__endcard-label">{label}</span>
+                        {isFirstTry && (
+                          <span className="player__endcard-firsttag">
+                            {strings.ui.tryThisFirst}
+                          </span>
+                        )}
                       </button>
                       <button
                         type="button"
-                        className="player__endcard-compare"
+                        ref={isFirstTry ? primaryCompareRef : undefined}
+                        className={`player__endcard-compare${
+                          isFirstTry ? ' player__endcard-compare--primary' : ''
+                        }`}
                         onClick={() => startCompare(occ.start)}
                       >
                         {strings.ui.compare}

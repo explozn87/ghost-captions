@@ -158,6 +158,33 @@ export interface GhostConfig {
    * entirely so the centre of the top edge is free for in-video titles.
    */
   settleSec: Tuned;
+  /**
+   * The floor (device px) for any overlay label's font, before the dark-frame
+   * boost (task 27.3): `max(labelMinPx, labelFrameFrac * frameHeight)`. Labels
+   * must stay readable at any frame size, so the font never drops below this
+   * even on a small inline player; the folded corner chip shrinks only its
+   * icon, never its text.
+   */
+  labelMinPx: Tuned;
+  /**
+   * The overlay label font as a fraction of the frame height (task 27.3), so a
+   * label grows with the player and reads the same at any size. The effective
+   * font is `max(labelMinPx, labelFrameFrac * frameHeight)`, then multiplied by
+   * `labelDarkFrameScale` on a dark frame.
+   */
+  labelFrameFrac: Tuned;
+  /**
+   * How much larger overlay labels are drawn on a dark video frame (task 27.3):
+   * a pale label on a dark scene is harder to read, so when the current frame
+   * is dark (mean luma below `labelDarkFrameLuma`) the font is scaled by this.
+   */
+  labelDarkFrameScale: Tuned;
+  /**
+   * The mean-luma threshold (0..255) below which the current video frame counts
+   * as "dark" and labels get the dark-frame boost (task 27.3). Sampled from a
+   * tiny downsample of the frame at most every 0.5 s, on-device.
+   */
+  labelDarkFrameLuma: Tuned;
 }
 
 /**
@@ -392,6 +419,22 @@ export const ghostConfig = {
   settleSec: {
     value: 3,
     why: 'An ambient occurrence steady for more than 3 s folds away into a small corner chip and its band fades out (task 25.3), freeing the centre of the top edge for in-video titles and credits. A new loudness rise unfolds it again. 3 s matches the band-fade settle time (task 23.5) so a sound fades its band, then folds to a chip, in one continuous gesture.',
+  },
+  labelMinPx: {
+    value: 14,
+    why: 'Overlay labels never drop below 14 device px (task 27.3): fun review round 4 found labels unreadable on a small inline player. The effective font is max(labelMinPx, labelFrameFrac * frameHeight), so a large player grows the text but a small one keeps this floor; the folded corner chip shrinks only its icon, never its text.',
+  },
+  labelFrameFrac: {
+    value: 0.03,
+    why: 'An overlay label is 3% of the frame height (task 27.3), so a label reads the same at any player size (18 px at a 600 px tall frame). Combined with labelMinPx as a floor: max(14, 0.03 * H). Keeps labels at least as large as the earlier fixed 16 px on ordinary frames while scaling up on a full-screen frame.',
+  },
+  labelDarkFrameScale: {
+    value: 1.3,
+    why: 'Labels are drawn 1.3× larger on a dark video frame (task 27.3): a pale label on a dark scene is harder to read, so a modest boost keeps it legible without swamping the picture. Applied only when the sampled mean luma is below labelDarkFrameLuma.',
+  },
+  labelDarkFrameLuma: {
+    value: 40,
+    why: 'A video frame counts as dark when the mean luma of a 16×9 downsample is below 40/255 (task 27.3), the point at which a pale-plate label needs the size boost to stay readable. Sampled at most every 0.5 s from a tiny downsample, entirely on-device (nothing leaves the browser).',
   },
 } satisfies GhostConfig;
 

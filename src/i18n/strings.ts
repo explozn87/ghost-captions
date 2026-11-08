@@ -145,6 +145,16 @@ export interface Strings {
     /** The chip shown during the with-ghosts pass of a compare (task 25.5). */
     compareWithGhosts: string;
     /**
+     * The caption-band plate shown during the captions-only pass of a compare
+     * (task 27.1), spelling out that the captions say nothing about this sound.
+     * Shown only when no loaded subtitle cue already covers the moment.
+     */
+    compareCaptionsOnlyPlate: string;
+    /** The step marker on a compare chip, e.g. "1/2" (task 27.1). `{step}`/`{total}`. */
+    compareStep: string;
+    /** The "Try this first" tag on the loudest end-card evidence row (task 27.2). */
+    tryThisFirst: string;
+    /**
      * The basis line under the end-card number for a demo clip with no subtitle
      * file (task 25.7), spelling out that dialogue-only captions were assumed.
      */

@@ -31,6 +31,7 @@
 import type { EdgeFog, Family, FogTexture, GhostSprite } from '../shared/types.ts';
 import { FOG_CLEAR_CENTRE, baseRadiusFrac, CAPTION_BAND } from './layout.ts';
 import { ghostConfig } from '../config/ghost.config.ts';
+import type { GhostConfig } from '../config/ghost.config.ts';
 
 /**
  * A minimal 2D drawing surface. Declared structurally (not as
@@ -249,6 +250,55 @@ const LABEL_PAD_X = 6;
 const LABEL_PAD_Y = 4;
 
 /**
+ * The overlay label font size (device px) for a frame of height `H`, with an
+ * optional dark-frame boost (task 27.3).
+ *
+ * The font is `max(labelMinPx, labelFrameFrac * H)` so a label grows with the
+ * player and never drops below the readable floor on a small inline frame; on a
+ * dark frame it is multiplied by `labelDarkFrameScale` so a pale label stays
+ * legible on a dark scene. Pure over `H` and `dark`, so draw and its tests size
+ * labels identically. The result is rounded to a whole pixel for crisp text.
+ */
+export function labelFontPx(
+  H: number,
+  dark = false,
+  cfg: GhostConfig = ghostConfig,
+): number {
+  const base = Math.max(cfg.labelMinPx.value, cfg.labelFrameFrac.value * Math.max(0, H));
+  const scaled = dark ? base * cfg.labelDarkFrameScale.value : base;
+  return Math.max(1, Math.round(scaled));
+}
+
+/**
+ * Whether the current video frame is dark enough that labels need the size
+ * boost (task 27.3). `pixels` is an RGBA buffer of a tiny downsample of the
+ * frame (e.g. a 16×9 grab), four bytes per pixel. The mean luma (Rec. 601) is
+ * compared against `labelDarkFrameLuma`; a frame below it counts as dark.
+ *
+ * Pure over the pixel buffer so it is fully tested without a canvas; the
+ * browser samples the downsample at most every 0.5 s and nothing leaves the
+ * device (the buffer is read, never sent). An empty buffer is not dark (no
+ * evidence to boost on).
+ */
+export function isDarkFrame(
+  pixels: ArrayLike<number>,
+  cfg: GhostConfig = ghostConfig,
+): boolean {
+  const n = Math.floor(pixels.length / 4);
+  if (n <= 0) return false;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const r = pixels[i * 4]!;
+    const g = pixels[i * 4 + 1]!;
+    const b = pixels[i * 4 + 2]!;
+    // Rec. 601 luma; alpha ignored (overlay reads the opaque video frame).
+    sum += 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+  const mean = sum / n;
+  return mean < cfg.labelDarkFrameLuma.value;
+}
+
+/**
  * Horizontal margin (device px) a label plate is kept clear of either frame
  * edge (task 22.1): a plate is clamped into `[EDGE_MARGIN, W - EDGE_MARGIN]` so
  * its text never leaves the frame. Measured defect: at 9.6 s the gunshot
@@ -432,8 +482,8 @@ function clampNum(x: number, lo: number, hi: number): number {
 }
 
 /** The plate size (device px) for a label's text width (tasks 22.1, 22.2). */
-export function labelPlateSize(textWidth: number): { w: number; h: number } {
-  return { w: textWidth + LABEL_PAD_X * 2, h: LABEL_FONT_PX + LABEL_PAD_Y * 2 };
+export function labelPlateSize(textWidth: number, fontPx: number = LABEL_FONT_PX): { w: number; h: number } {
+  return { w: textWidth + LABEL_PAD_X * 2, h: fontPx + LABEL_PAD_Y * 2 };
 }
 
 /**
@@ -544,6 +594,8 @@ interface PendingLabel {
   rect: LabelRect;
   /** Draw the label in bold (task 23.5 arrival under reduced motion). */
   bold: boolean;
+  /** Font size (device px) for this label (task 27.3). */
+  fontPx: number;
 }
 
 /**
@@ -552,6 +604,7 @@ interface PendingLabel {
  * to sit (centred under the ghost); `placeLabels` then clamps it into the frame
  * and clear of other plates, and `drawLabelAt` paints it. `bold` (task 23.5)
  * is carried through so an arriving label under reduced motion is drawn bold.
+ * `fontPx` (task 27.3) sizes the label to the frame and the dark-frame boost.
  */
 function measureLabel(
   ctx: Ctx2D,
@@ -560,13 +613,14 @@ function measureLabel(
   topY: number,
   opacity: number,
   bold = false,
+  fontPx: number = LABEL_FONT_PX,
 ): PendingLabel {
   ctx.save();
-  ctx.font = `${bold ? 'bold ' : ''}${LABEL_FONT_PX}px sans-serif`;
+  ctx.font = `${bold ? 'bold ' : ''}${fontPx}px sans-serif`;
   const textW = ctx.measureText(label).width;
   ctx.restore();
-  const { w, h } = labelPlateSize(textW);
-  return { text: label, opacity, rect: { x: cx, y: topY, w, h }, bold };
+  const { w, h } = labelPlateSize(textW, fontPx);
+  return { text: label, opacity, rect: { x: cx, y: topY, w, h }, bold, fontPx };
 }
 
 /** Options for `draw`, so the sprite loader can be injected in tests. */
@@ -590,6 +644,13 @@ export interface DrawOptions {
    * opacity. When 0 the sound overlay is skipped entirely.
    */
   overlayAlpha?: number;
+  /**
+   * Whether the current video frame is dark (task 27.3): when true, overlay
+   * labels are drawn larger (by `labelDarkFrameScale`) so a pale label stays
+   * readable on a dark scene. The Player samples this at most every 0.5 s from
+   * a tiny on-device downsample via {@link isDarkFrame}. Defaults to false.
+   */
+  darkFrame?: boolean;
 }
 
 /**
@@ -621,6 +682,10 @@ export function draw(
   const H = ctx.canvas.height;
   const minDim = Math.min(W, H);
   const captionBand = Math.max(CAPTION_BAND, options.captionBandFrac ?? CAPTION_BAND);
+  // Label font sized to the frame, boosted on a dark scene (task 27.3). One
+  // value for every overlay label so a frame's labels all match and scale
+  // together.
+  const fontPx = labelFontPx(H, options.darkFrame ?? false);
   ctx.clearRect(0, 0, W, H);
 
   // The whole sound overlay fades with `overlayAlpha` (task 21.1). At 0 it is
@@ -676,7 +741,7 @@ export function draw(
     // fogs read and extend `topBandObstacles` so their sprite + label land in
     // the first free candidate centre, clear of every ghost (task 26.1).
     for (const fog of fogs) {
-      const pending = drawEdgeFog(octx, fog, time, reducedMotion, loader, minDim, captionBand, topBandObstacles);
+      const pending = drawEdgeFog(octx, fog, time, reducedMotion, loader, minDim, captionBand, topBandObstacles, fontPx);
       ambientLabels.push(...pending);
     }
 
@@ -712,7 +777,7 @@ export function draw(
       // is drawn bold in place of the scale pop (task 23.5).
       const labelTop = cy + dy + radius + LABEL_BELOW_GAP;
       const bold = reducedMotion && sprite.arriving;
-      const pending = measureLabel(octx, sprite.label, cx + dx, labelTop, sprite.opacity, bold);
+      const pending = measureLabel(octx, sprite.label, cx + dx, labelTop, sprite.opacity, bold, fontPx);
       if (i === bigIndex) bigLabels.push(pending);
       else markerLabels.push(pending);
     });
@@ -729,7 +794,7 @@ export function draw(
     );
     pendings.forEach((p, i) => {
       const r = rects[i]!;
-      drawLabelAt(octx, p.text, r, p.opacity, p.bold);
+      drawLabelAt(octx, p.text, r, p.opacity, p.bold, p.fontPx);
     });
   }
 
@@ -846,6 +911,7 @@ function drawEdgeFog(
   minDim: number,
   captionBand: number,
   topBandObstacles: Box[] = [],
+  fontPx: number = LABEL_FONT_PX,
 ): PendingLabel[] {
   if (fog.opacity <= 0) return [];
   const W = ctx.canvas.width;
@@ -865,9 +931,11 @@ function drawEdgeFog(
     drawAmbientSprite(ctx, fog.family, cx, cy, chipRadius, AMBIENT_SPRITE_MIN_OPACITY, loader);
     // The chip's label sits to the right of the sprite; its plate is placed by
     // placeLabels like any other (so it never leaves the frame or overlaps).
+    // Only the icon shrinks when folded (chipRadius); the text keeps the full
+    // frame-scaled font so it stays readable (task 27.3).
     const labelCX = cx + chipRadius + 2;
-    const labelTop = cy - LABEL_FONT_PX / 2 - LABEL_PAD_Y;
-    return [measureLabel(ctx, fog.label, labelCX + 40, labelTop, 1, false)];
+    const labelTop = cy - fontPx / 2 - LABEL_PAD_Y;
+    return [measureLabel(ctx, fog.label, labelCX + 40, labelTop, 1, false, fontPx)];
   }
 
   // Side band width: half of the cleared-centre complement, so left+right
@@ -917,7 +985,7 @@ function drawEdgeFog(
     // sprite. The chosen boxes are added to `topBandObstacles` so later items
     // avoid them too.
     const spriteCY = topBandH * 0.42;
-    const plate = measureLabel(ctx, fog.label, 0, 0, 1, reducedMotion && fog.arriving);
+    const plate = measureLabel(ctx, fog.label, 0, 0, 1, reducedMotion && fog.arriving, fontPx);
     const labelTop = spriteCY + ambientRadius + LABEL_BELOW_GAP;
     const cx = placeTopBandCentre(
       ambientRadius,
@@ -956,7 +1024,7 @@ function drawEdgeFog(
   const spriteCY = H * 0.22;
   drawAmbientSprite(ctx, fog.family, bandCentreX, spriteCY, ambientRadius, spriteOpacity, loader);
   const labelTop = spriteCY + ambientRadius + LABEL_BELOW_GAP;
-  return [measureLabel(ctx, fog.label, bandCentreX, labelTop, 1, reducedMotion && fog.arriving)];
+  return [measureLabel(ctx, fog.label, bandCentreX, labelTop, 1, reducedMotion && fog.arriving, fontPx)];
 }
 
 /** Fraction of the frame height the shared top ambient band occupies (task 24.3, from config). */
@@ -1172,10 +1240,10 @@ export const LABEL_VISIBLE_FLOOR = 0.15;
  * (measured defect: the vehicle label at 7.3 s was drawn at alpha 0.55). Below
  * the floor the label is omitted entirely with its ghost.
  */
-function drawLabelAt(ctx: Ctx2D, label: string, rect: LabelRect, opacity: number, bold = false): void {
+function drawLabelAt(ctx: Ctx2D, label: string, rect: LabelRect, opacity: number, bold = false, fontPx: number = LABEL_FONT_PX): void {
   if (clamp01(opacity) < LABEL_VISIBLE_FLOOR) return;
   ctx.save();
-  ctx.font = `${bold ? 'bold ' : ''}${LABEL_FONT_PX}px sans-serif`;
+  ctx.font = `${bold ? 'bold ' : ''}${fontPx}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   const plateX = rect.x - rect.w / 2;
