@@ -1,0 +1,18 @@
+{
+  "enabled": true,
+  "name": "Module tests on save",
+  "description": "When a pure analysis module under src/measure, src/events or src/export is saved, run the project's test suite so a broken measurement, event-building or export change is caught immediately. These are the property-tested pure modules (NFR-5, NFR-7); keeping them green on every save is cheaper than finding the break later in the UI.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "src/measure/**/*.ts",
+      "src/events/**/*.ts",
+      "src/export/**/*.ts"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A file under src/measure, src/events or src/export was just saved. Run `npm run -s test` and report the result. If any test fails, show the failing test names and the assertion messages, say which saved module is the likely cause, and propose the smallest fix — but do not change any file until I confirm. Do not run any other command."
+  }
+}

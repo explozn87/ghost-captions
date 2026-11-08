@@ -76,8 +76,8 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
   - [x] 11.1 Add two or three redistributable clips under `public/demo/` with `CREDITS.md`; `DemoPicker` showing title, author, licence.
     - _Requirements: 1.3, NFR-4_
 
-- [ ] 12. Kiro hooks
-  - [ ] 12.1 Run module tests on save for `src/measure`, `src/events`, `src/export`; secret scan before commit; review hook for `familyMap.ts` / `ghost.config.ts` (`why` kept on every value).
+- [x] 12. Kiro hooks
+  - [x] 12.1 Run module tests on save for `src/measure`, `src/events`, `src/export`; secret scan before commit; review hook for `familyMap.ts` / `ghost.config.ts` (`why` kept on every value).
     - _Requirements: NFR-6_
 
 - [ ] 13. Browser check of the built site

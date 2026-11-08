@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "name": "Review tuned config and family map",
+  "description": "When ghost.config.ts or familyMap.ts changes, review the diff. ghost.config.ts is the single versioned configuration module (NFR-6): every threshold, prior and weight must keep its one-line `why`. familyMap.ts is the single YAMNet-name → family table (Req 3.1, 3.2): speech categories must stay 'speech', and every bundled label must still map. This hook enforces the 'measured, not invented' principle so a number or a mapping never changes without a stated reason.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "src/config/ghost.config.ts",
+      "src/events/familyMap.ts"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "ghost.config.ts and/or familyMap.ts was just edited. Review the change against the project's honesty principles and report; do not modify any file.\n\nIf ghost.config.ts changed: confirm that EVERY value (every Tuned entry — labelThreshold, mergeGap, minDuration, onsetKeepPercentile, sideThreshold, sideAgreement, maxOnScreen, beatMinCorr, trendDb, every family prior, and weights w1/w2/w3) still has a non-empty `why` string. List any value whose `why` is missing, empty, or no longer matches the number it justifies. If a threshold moved, check the `why` was updated to match.\n\nIf familyMap.ts changed: confirm the spoken-word categories (Speech, Conversation, Narration, Babbling, Whispering, Speech synthesizer, Child speech) still map to 'speech' and not to a ghost family (Req 3.2), and that no mapping value is outside the Family / 'speech' set. Flag any category that was moved from 'speech' into a ghost family.\n\nThen run `npm run -s test` once to confirm the config and familyMap parity/coverage tests still pass, and report the result. Do not run any other command. Summarise in a few lines: what changed, whether every `why` is intact, and whether speech stayed speech."
+  }
+}
