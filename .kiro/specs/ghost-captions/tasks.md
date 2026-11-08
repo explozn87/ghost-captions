@@ -107,3 +107,18 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
     - _Requirements: 4.4, 6.2, 6.5_
   - [x] 16.5 Sprite art: `draw()` paints `public/ghosts/<family>.png` (512×512, transparent) scaled to the sprite size, with the configured opacity; it preloads all images once and falls back to the existing Path2D silhouette for any image that is missing or not yet loaded. Reduced motion keeps the same images without drift/tremble. Tests cover the fallback path with a fake image loader.
     - _Requirements: 6.3, 6.6_
+
+- [ ] 17. Bigger ghosts and motion by sound type (feedback 2026-11-08: ghosts too small to recognise; review by Elsa)
+  - [ ] 17.1 Size: default ghost diameter = 30 % of the viewport's shorter side (180 px at 600 px), replacing BASE_RADIUS 0.08. Narrow the loudness multiplier to 0.85–1.15 so loudness still reads but small ghosts stay recognisable. Move these to `ghost.config.ts` (`ghostDiameterFrac`, `loudScaleMin`, `loudScaleMax`, each with a `why`). The size control in Settings offers 24 % / 30 % / 36 % (small / normal / large).
+    - _Requirements: 5.1, 6.2, 6.7_
+  - [ ] 17.2 One big ghost at a time: only the loudest active point event is drawn at full size; other simultaneous point events are drawn as small markers (25 % of full size) with their labels, so large ghosts never pile up over faces.
+    - _Requirements: 3.6, 6.2_
+  - [ ] 17.3 Motion by family (config table `motionByFamily`):
+    - `vehicle`, `footsteps`: **cross** — the ghost travels across the frame only when the event's `sideTrack` shows a measured side change (e.g. left → right); it follows the measured track, never an invented path. Without a measured change it glides in from its side and out, as now.
+    - `gunshot`, `impact`, `knock`, `door`, `glass`, `scream`: **edge react** — appear at the source side's edge with a short scale-pop (one pulse, no flashing), then withdraw.
+    - `singing`, `laughter`, `crying`, `siren`, `animal`, `fire`, `unknown`: **hover** — stay in the upper band with a slow gentle sway.
+    - Ambient families keep edge fog (task 16.3).
+    Reduced motion: no travel or sway, same positions and sizes.
+    - _Requirements: 4.4, 4.5, 6.2, 6.6, 10.3_
+  - [ ] 17.4 Keep ghosts out of the caption band and keep the central face region light: a full-size ghost's opacity drops to 0.55 while its centre is inside the central 40 % of the frame.
+    - _Requirements: 6.5_
