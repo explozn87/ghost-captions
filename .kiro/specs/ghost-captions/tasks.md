@@ -56,12 +56,12 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
   - [x] 8.2 `draw()` on canvas: one silhouette per family, fog, label backing plate, reduced-motion path, tremble cap (no flashes > 3 Hz).
     - _Requirements: 6.3, 6.4, 6.6, 10.2, 10.3_
 
-- [ ] 9. App shell wired end to end with the fake classifier
-  - [ ] 9.1 `App` states intake → analysing → watch; `DropZone`, `Progress`, `Player` (video + overlay canvas synced by `requestVideoFrameCallback`/rAF incl. seek, pause, rate).
+- [x] 9. App shell wired end to end with the fake classifier
+  - [x] 9.1 `App` states intake → analysing → watch; `DropZone`, `Progress`, `Player` (video + overlay canvas synced by `requestVideoFrameCallback`/rAF incl. seek, pause, rate).
     - _Requirements: 1.1, 2.1, 6.1_
-  - [ ] 9.2 `Timeline`, `EventList` (keyboard, current-event highlight), `Settings` (language, reduced motion, size, family toggles), `AboutGhosts`, `ExportButton`.
+  - [x] 9.2 `Timeline`, `EventList` (keyboard, current-event highlight), `Settings` (language, reduced motion, size, family toggles), `AboutGhosts`, `ExportButton`.
     - _Requirements: 6.7, 7.1, 7.2, 7.3, 8.4, 10.1, 10.4, 11.1, 11.2_
-  - [ ] 9.3 Component test: loading a synthetic clip shows ghosts, list entries and a working export, using the fake classifier.
+  - [x] 9.3 Component test: loading a synthetic clip shows ghosts, list entries and a working export, using the fake classifier.
     - _Requirements: 6.1, 7.2, 8.1_
 
 - [ ] 10. Real decoding and classifier
