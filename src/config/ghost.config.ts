@@ -41,6 +41,7 @@ export interface GhostConfig {
    * name", not "a quiet second we could not label" — which cuts the clutter of
    * stray unknowns the live demo complained about.
    */
+  showUnknownEvents: Tuned<boolean>;
   unknownEnergyPercentile: Tuned;
   /** The onset (flux) percentile an unclassified window must clear to become an unknown event (task 20.1). */
   unknownOnsetPercentile: Tuned;
@@ -131,6 +132,10 @@ export const ghostConfig = {
   specificLabelThreshold: {
     value: 0.3,
     why: 'The specific classifier label (e.g. "Wind", "Thunder") is shown in the ghost label, event list, timeline tooltip and WebVTT cue only when its score reaches 0.3; below it the label falls back to the broader family name. Set equal to labelThreshold so a window that was confident enough to earn a family is also confident enough to name the specific sound, while never naming an unknown event (task 15.1).',
+  },
+  showUnknownEvents: {
+    value: false,
+    why: 'Off by default (feedback 2026-11-08: "this is a hackathon"). On a dense trailer the loud-and-sudden gate still let four unknown ghosts through and split the music into fragments. Showing only what we can name keeps honesty (nothing guessed is shown) without filling the screen with "unknown". Turn on to see unclassified loud hits.',
   },
   unknownEnergyPercentile: {
     value: 0.85,

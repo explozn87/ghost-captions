@@ -18,6 +18,10 @@ import type { ClassWindow, EventTrack, Frame, Family } from '../src/shared/types
 const opts: FrameOptions = { ...defaultFrameOptions, frameSize: 1024, hop: 512 };
 
 /** Build an event track from synthetic stereo audio + its measured frames. */
+// Direction tests feed unclassified windows; they need the unknown-event path
+// that is off by default since 2026-11-08 (showUnknownEvents).
+const WITH_UNKNOWN = { ...ghostConfig, showUnknownEvents: { ...ghostConfig.showUnknownEvents, value: true } };
+
 function trackFromSynth(
   pcm: { left: Float32Array; right: Float32Array; sampleRate: number; mono: boolean; duration: number },
   overrides: Partial<Parameters<typeof buildEvents>[2]> = {},
@@ -88,7 +92,7 @@ describe('buildEvents: direction properties P1, P2 (task 5.4)', () => {
       sampleRate: 16000,
       duration: 1.4,
     });
-    const { track } = trackFromSynth({ ...pcm, mono: true }, { mono: true });
+    const { track } = trackFromSynth({ ...pcm, mono: true }, { mono: true, config: WITH_UNKNOWN });
     expect(track.events.length).toBeGreaterThan(0);
     expect(track.events.every((e) => e.side === 'centre-unknown')).toBe(true);
   });
@@ -99,7 +103,7 @@ describe('buildEvents: direction properties P1, P2 (task 5.4)', () => {
       duration: 2.2,
       seed: 7,
     });
-    const { track } = trackFromSynth(pcm);
+    const { track } = trackFromSynth(pcm, { config: WITH_UNKNOWN });
     const e = track.events[0]!;
     // The event span can run past the 2 s burst into its silent tail (windows
     // are 0.975 s), where slices are centre-unknown. Look at the decided slices
@@ -435,6 +439,13 @@ describe('buildEvents: fewer unknowns (task 20.1)', () => {
     expect(track.events).toHaveLength(0);
   });
 
+  it('shows no unknown events by default (showUnknownEvents off)', () => {
+    const win: ClassWindow[] = [{ start: 0.05, end: 1.02, categories: [{ name: 'Eruption', score: 0.2 }] }];
+    const { pcm } = synthesize([{ kind: 'noise', start: 0.1, end: 0.5, gain: 0.95 }], { sampleRate: 16000, duration: 1.6, seed: 11 });
+    const track = buildEvents(win, frames(pcm, opts), { duration: 1.6, mono: true, labelsAvailable: true });
+    expect(track.events.filter((e) => e.family === 'unknown')).toHaveLength(0);
+  });
+
   it('creates an unknown event for a loud AND sudden unclassified window', () => {
     // A below-threshold window over a sharp, loud noise burst: it is in the
     // clip's top energy and top onset, so it becomes a single unknown event
@@ -449,7 +460,7 @@ describe('buildEvents: fewer unknowns (task 20.1)', () => {
       { sampleRate: 16000, duration: 3.6, seed: 11 },
     );
     const fs = frames(pcm, opts);
-    const track = buildEvents(win, fs, { duration: 3.6, mono: true, labelsAvailable: true });
+    const track = buildEvents(win, fs, { duration: 3.6, mono: true, labelsAvailable: true, config: WITH_UNKNOWN });
     expect(track.events.filter((e) => e.family === 'unknown')).toHaveLength(1);
     expect(track.events[0]!.topLabel).toBeNull(); // never a guessed label
   });

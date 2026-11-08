@@ -158,6 +158,7 @@ function promoteLoudUnknowns(
     cfg.unknownOnsetPercentile.value,
   );
 
+  if (!cfg.showUnknownEvents.value) return labels;
   return labels.map((w) => {
     if (w.kind !== 'drop') return w;
     const inWindow = framesInSpan(frames, w.start, w.end);
