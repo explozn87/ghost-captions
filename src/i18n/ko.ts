@@ -110,6 +110,8 @@ export const ko: Strings = {
     chipAlways: '유령 항상 켜짐',
     chipSoundOff: '🔇 소리 꺼짐 — 유령 등장',
     chipSoundOn: '🔊 소리 켜짐 — 유령 쉬는 중',
+    fullscreen: '전체 화면(유령 포함)',
+    exitFullscreen: '전체 화면 나가기',
 
     colTime: '시간',
     colSound: '소리',

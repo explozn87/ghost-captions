@@ -111,6 +111,8 @@ export const en: Strings = {
     chipAlways: 'Ghosts always on',
     chipSoundOff: '🔇 Sound off — ghosts on',
     chipSoundOn: '🔊 Sound on — ghosts resting',
+    fullscreen: 'Full screen (with ghosts)',
+    exitFullscreen: 'Exit full screen',
 
     colTime: 'Time',
     colSound: 'Sound',

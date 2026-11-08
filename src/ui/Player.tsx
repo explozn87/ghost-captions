@@ -14,6 +14,7 @@
 // them and keeps the canvas's backing store matched to its CSS size for crisp
 // output.
 
+import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import type { DialogueCue, EventTrack } from '../shared/types.ts';
 import { activeEvents } from '../events/buildEvents.ts';
@@ -73,6 +74,36 @@ export function Player({
 }: PlayerProps): JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Fullscreen must take the whole player (video + ghost canvas), not the bare
+  // <video>: a browser's own video fullscreen shows only the video, so every
+  // ghost vanished (feedback 2026-11-08).
+  const playerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [aspect, setAspect] = useState(16 / 9);
+  const canFullscreen = typeof document !== 'undefined' && !!document.fullscreenEnabled;
+  const toggleFullscreen = () => {
+    const player = playerRef.current;
+    if (!player) return;
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    else void player.requestFullscreen().catch(() => {});
+  };
+  useEffect(() => {
+    const onChange = () => {
+      const el = document.fullscreenElement;
+      // Some browsers still offer their own video fullscreen (control bar or
+      // double-click). Redirect it to the whole player so the ghosts come too.
+      if (el && el === videoRef.current && playerRef.current) {
+        void document
+          .exitFullscreen()
+          .then(() => playerRef.current?.requestFullscreen())
+          .catch(() => {});
+        return;
+      }
+      setIsFullscreen(!!el && el === playerRef.current);
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
   // Keep the latest settings in a ref so the draw loop reads current values
   // without being torn down and rebuilt on every settings change.
   const settingsRef = useRef<Settings>(settings);
@@ -256,19 +287,39 @@ export function Player({
 
   return (
     <div
-      className="player"
+      ref={playerRef}
+      className={`player${isFullscreen ? ' player--fullscreen' : ''}`}
       onPointerEnter={() => setChipVisible(true)}
       onPointerLeave={() => setChipVisible(false)}
     >
-      <video
-        ref={videoRef}
-        className="player__video"
-        src={src}
-        controls
-        playsInline
-        preload="auto"
-      />
-      <canvas ref={canvasRef} className="player__overlay" aria-hidden="true" />
+      <div className="player__stage" style={{ '--ar': String(aspect) } as React.CSSProperties}>
+        <video
+          ref={videoRef}
+          className="player__video"
+          src={src}
+          controls
+          playsInline
+          preload="auto"
+          {...{ controlsList: 'nofullscreen' }}
+          onLoadedMetadata={(e) => {
+            const v = e.currentTarget;
+            if (v.videoWidth > 0 && v.videoHeight > 0) setAspect(v.videoWidth / v.videoHeight);
+          }}
+          onDoubleClick={canFullscreen ? toggleFullscreen : undefined}
+        />
+        <canvas ref={canvasRef} className="player__overlay" aria-hidden="true" />
+      </div>
+      {canFullscreen && (
+        <button
+          type="button"
+          className="player__fullscreen"
+          onClick={toggleFullscreen}
+          aria-label={isFullscreen ? strings.ui.exitFullscreen : strings.ui.fullscreen}
+          title={isFullscreen ? strings.ui.exitFullscreen : strings.ui.fullscreen}
+        >
+          {isFullscreen ? '✕' : '⛶'}
+        </button>
+      )}
       <button
         type="button"
         className={`player__chip${chipVisible ? '' : ' player__chip--hidden'}`}

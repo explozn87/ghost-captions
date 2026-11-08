@@ -119,6 +119,8 @@ export interface Strings {
     chipAlways: string;
     chipSoundOff: string;
     chipSoundOn: string;
+    fullscreen: string;
+    exitFullscreen: string;
 
     // Event list columns/labels (Requirement 7.2).
     colTime: string;

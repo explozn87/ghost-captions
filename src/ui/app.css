@@ -37,7 +37,15 @@ a { color: var(--accent); }
 .watch__controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .player { position: relative; width: 100%; background: #000; border-radius: 12px; overflow: hidden; line-height: 0; }
 .player__video { display: block; width: 100%; height: auto; max-height: 70vh; }
+.player__stage { position: relative; width: 100%; }
 .player__overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+/* Full screen takes the whole player so the ghosts come along. The stage keeps
+   the video's aspect ratio, so the canvas sits exactly on the picture. */
+.player__fullscreen { position: absolute; top: 10px; right: 10px; z-index: 2; line-height: 1;
+  font-size: 1.1rem; background: rgba(15,17,21,.82); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; }
+.player--fullscreen { display: grid; place-items: center; width: 100vw; height: 100vh; border-radius: 0; }
+.player--fullscreen .player__stage { width: min(100vw, calc(100vh * var(--ar))); }
+.player--fullscreen .player__video { max-height: none; }
 
 /* Status chip: which way the ghosts follow the sound (task 21.2). Text carries
    the meaning, not only the icon; it fades in on change and on hover. */
