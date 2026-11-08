@@ -64,12 +64,12 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
   - [x] 9.3 Component test: loading a synthetic clip shows ghosts, list entries and a working export, using the fake classifier.
     - _Requirements: 6.1, 7.2, 8.1_
 
-- [ ] 10. Real decoding and classifier
-  - [ ] 10.1 `decodeFile()`, `toMono16k()`, `DecodeError`, mono notice.
+- [x] 10. Real decoding and classifier
+  - [x] 10.1 `decodeFile()`, `toMono16k()`, `DecodeError`, mono notice.
     - _Requirements: 1.2, 2.2_
-  - [ ] 10.2 `mediapipeClassifier` with self-hosted `public/models/yamnet.tflite` and bundled wasm; failure path to labels-unavailable.
+  - [x] 10.2 `mediapipeClassifier` with self-hosted `public/models/yamnet.tflite` and bundled wasm; failure path to labels-unavailable.
     - _Requirements: 2.3, 2.5_
-  - [ ] 10.3 Wire the real classifier into `App`; keep the fake for tests.
+  - [x] 10.3 Wire the real classifier into `App`; keep the fake for tests.
     - _Requirements: 2.1_
 
 - [ ] 11. Demo clips

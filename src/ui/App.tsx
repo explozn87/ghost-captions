@@ -4,14 +4,15 @@
 // analysis progress, then watches the clip with ghosts drawn over it, a
 // timeline, an event list, settings, the honesty panel and a caption export.
 //
-// Two collaborators are injected so the whole pipeline is testable without a
-// browser codec or a downloaded model (NFR-5):
-//   - `decode(file)` turns a File into StereoPcm. The default uses Web Audio's
-//     `decodeAudioData`; it is a task-9 stand-in that task 10 replaces with the
-//     full `decodeFile` module (native rate, mono notice, DecodeError). Tests
+// Two collaborators are injected so the whole pipeline stays testable without
+// a browser codec or a downloaded model (NFR-5), while the defaults are the
+// real ones used in the browser (task 10.3):
+//   - `decode(file)` turns a File into StereoPcm. The default is the real
+//     `decodeFile` (Web Audio, native rate, mono notice, DecodeError). Tests
 //     inject a decoder that returns synthetic PCM.
-//   - `classifier` labels the audio. The default is the deterministic fake
-//     (task 9); task 10 swaps in the real MediaPipe + YAMNet classifier.
+//   - `classifier` labels the audio. The default is the real MediaPipe +
+//     YAMNet classifier; a failed model load falls back to labels-unavailable
+//     inside `analyse`. Tests inject the deterministic fake.
 //
 // Language and reduced motion are read from the OS/browser at first mount and
 // then owned by Settings (Req 9.1, 10.4). The object URL for the <video> is
@@ -21,7 +22,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EventTrack, StereoPcm } from '../shared/types.ts';
 import type { Classifier } from '../classify/classifier.ts';
-import { makeFakeClassifier } from '../classify/fakeClassifier.ts';
+import { makeMediapipeClassifier } from '../classify/mediapipeClassifier.ts';
+import { decodeFile } from '../audio/decode.ts';
 import { analyse } from '../events/analyse.ts';
 import { asLang, DEFAULT_LANG, t } from '../i18n/index.ts';
 import type { Lang } from '../i18n/index.ts';
@@ -39,9 +41,9 @@ import { ExportButton } from './ExportButton.tsx';
 export type DecodeFn = (file: File) => Promise<StereoPcm>;
 
 export interface AppProps {
-  /** Decoder; defaults to a Web Audio stand-in (task 10 replaces it). */
+  /** Decoder; defaults to the real Web Audio `decodeFile` (task 10.1). */
   decode?: DecodeFn;
-  /** Classifier; defaults to the deterministic fake (task 9). */
+  /** Classifier; defaults to the real MediaPipe + YAMNet classifier (task 10.3). */
   classifier?: Classifier;
   /** Initial language; defaults to the browser language, else English. */
   initialLang?: Lang;
@@ -54,31 +56,8 @@ type Phase =
   | { kind: 'watch'; track: EventTrack; src: string }
   | { kind: 'error'; message: string };
 
-/** Default decoder: Web Audio `decodeAudioData`. Replaced fully in task 10. */
-const defaultDecode: DecodeFn = async (file) => {
-  const buffer = await file.arrayBuffer();
-  const Ctor =
-    (globalThis as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext })
-      .AudioContext ??
-    (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!Ctor) throw new Error('Web Audio is unavailable in this browser.');
-  const ctx = new Ctor();
-  try {
-    const audio = await ctx.decodeAudioData(buffer);
-    const left = audio.getChannelData(0);
-    const mono = audio.numberOfChannels < 2;
-    const right = mono ? left : audio.getChannelData(1);
-    return {
-      sampleRate: audio.sampleRate,
-      left: new Float32Array(left),
-      right: new Float32Array(right),
-      mono,
-      duration: audio.duration,
-    };
-  } finally {
-    void ctx.close();
-  }
-};
+/** Default decoder: the real Web Audio `decodeFile` (task 10.1). */
+const defaultDecode: DecodeFn = (file) => decodeFile(file);
 
 /** Read the OS reduced-motion preference, defensively for non-browser tests. */
 function prefersReducedMotion(): boolean {
@@ -90,7 +69,10 @@ function prefersReducedMotion(): boolean {
 
 export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Element {
   const decodeFn = decode ?? defaultDecode;
-  const classifierImpl = useMemo(() => classifier ?? makeFakeClassifier(), [classifier]);
+  const classifierImpl = useMemo(
+    () => classifier ?? makeMediapipeClassifier(),
+    [classifier],
+  );
 
   const startLang: Lang =
     initialLang ??
