@@ -196,3 +196,20 @@ export interface EdgeFog {
    */
   textureDensity: number;
 }
+
+/**
+ * One dialogue subtitle cue parsed from an optional `.srt` or `.vtt` file the
+ * viewer opens alongside the video (task 19.1). A muted viewer needs the
+ * spoken words too, so these are shown verbatim in the bottom caption band
+ * (task 19.2) and merged into the exported WebVTT alongside the sound cues
+ * (task 19.4). `text` may contain embedded newlines for multi-line cues; the
+ * player shows at most two lines.
+ */
+export interface DialogueCue {
+  /** Start time in seconds. */
+  start: number;
+  /** End time in seconds (>= start). */
+  end: number;
+  /** The spoken text, possibly multi-line (lines joined by '\n'). */
+  text: string;
+}

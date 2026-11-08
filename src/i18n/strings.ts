@@ -92,6 +92,14 @@ export interface Strings {
     muteFamily: string;
     language: string;
 
+    // Dialogue subtitles (task 19).
+    /** Button to add a subtitle file after the video (task 19.1). */
+    addSubtitles: string;
+    /** Button label once a subtitle file is loaded (task 19.1). */
+    replaceSubtitles: string;
+    /** Settings toggle for videos with burned-in subtitles (task 19.3). */
+    burnedInSubtitles: string;
+
     // Event list columns/labels (Requirement 7.2).
     colTime: string;
     colSound: string;

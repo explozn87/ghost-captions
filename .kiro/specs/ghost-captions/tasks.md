@@ -131,12 +131,12 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
   - [x] 18.3 Identity: every ambient event also shows its family sprite (`public/ghosts/<family>.png`) at reduced size (50 % of the point-ghost size) inside its fog band, plus its text label on a backing plate, so the viewer can tell what the sound is without the animation (Req 6.4). The sprite and label sit in the upper part of the band, never in the caption band.
     - _Requirements: 6.3, 6.4, 6.5_
 
-- [ ] 19. Dialogue subtitles alongside the ghosts (feedback 2026-11-08: a muted viewer also needs the dialogue)
-  - [ ] 19.1 The intake accepts an optional subtitle file (`.srt` or `.vtt`) with the video (drop both, or add the subtitle after the video). Parse SRT and WebVTT into cues with a pure, tested parser (malformed cues are skipped, not fatal).
+- [x] 19. Dialogue subtitles alongside the ghosts (feedback 2026-11-08: a muted viewer also needs the dialogue)
+  - [x] 19.1 The intake accepts an optional subtitle file (`.srt` or `.vtt`) with the video (drop both, or add the subtitle after the video). Parse SRT and WebVTT into cues with a pure, tested parser (malformed cues are skipped, not fatal).
     - _Requirements: 1.1, 7.2_
-  - [ ] 19.2 During playback the active dialogue cue is shown in the bottom caption band (white text on a dark plate, AA contrast, 2 lines max). Ghosts, labels and edge fog never enter that band; when a dialogue cue is on screen the band's height is measured from the rendered cue so taller cues push ghosts further up.
+  - [x] 19.2 During playback the active dialogue cue is shown in the bottom caption band (white text on a dark plate, AA contrast, 2 lines max). Ghosts, labels and edge fog never enter that band; when a dialogue cue is on screen the band's height is measured from the rendered cue so taller cues push ghosts further up.
     - _Requirements: 6.5, 10.2_
-  - [ ] 19.3 Burned-in subtitles: keep the bottom caption band free even without a subtitle file (unchanged), and add a Settings toggle "Video has burned-in subtitles" that enlarges the reserved bottom band to 22 % of the frame.
+  - [x] 19.3 Burned-in subtitles: keep the bottom caption band free even without a subtitle file (unchanged), and add a Settings toggle "Video has burned-in subtitles" that enlarges the reserved bottom band to 22 % of the frame.
     - _Requirements: 6.5_
-  - [ ] 19.4 Export: when dialogue cues are loaded, the exported WebVTT merges dialogue cues and sound cues in time order (sound cues in brackets as now), so a creator gets one complete SDH-style file.
+  - [x] 19.4 Export: when dialogue cues are loaded, the exported WebVTT merges dialogue cues and sound cues in time order (sound cues in brackets as now), so a creator gets one complete SDH-style file.
     - _Requirements: 8.1, 8.2_

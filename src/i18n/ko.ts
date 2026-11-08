@@ -94,6 +94,10 @@ export const ko: Strings = {
     muteFamily: '이 소리 숨기기',
     language: '언어',
 
+    addSubtitles: '대사 자막 추가',
+    replaceSubtitles: '대사 자막 교체',
+    burnedInSubtitles: '영상에 자막이 입혀져 있음',
+
     colTime: '시간',
     colSound: '소리',
     colDirection: '방향',

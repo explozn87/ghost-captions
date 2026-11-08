@@ -6,7 +6,7 @@
 // button is disabled when the track has no exportable (non-speech) cue, so a
 // viewer never downloads an empty file.
 
-import type { EventTrack } from '../shared/types.ts';
+import type { DialogueCue, EventTrack } from '../shared/types.ts';
 import type { Lang, Strings } from '../i18n/index.ts';
 import { toWebVtt } from '../export/webvtt.ts';
 
@@ -14,6 +14,8 @@ export interface ExportButtonProps {
   track: EventTrack;
   lang: Lang;
   strings: Strings;
+  /** Dialogue cues to merge into the export in time order (task 19.4). */
+  dialogue?: readonly DialogueCue[];
   /** Base name for the downloaded file (without extension). */
   fileBaseName?: string;
 }
@@ -27,10 +29,11 @@ export function ExportButton({
   track,
   lang,
   strings,
+  dialogue = [],
   fileBaseName = 'ghost-captions',
 }: ExportButtonProps): JSX.Element {
   const onExport = () => {
-    const vtt = toWebVtt(track, lang);
+    const vtt = toWebVtt(track, lang, dialogue);
     const blob = new Blob([vtt], { type: 'text/vtt' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -48,7 +51,7 @@ export function ExportButton({
       type="button"
       className="export-button"
       onClick={onExport}
-      disabled={!hasExportableCue(track)}
+      disabled={!hasExportableCue(track) && dialogue.length === 0}
     >
       {strings.ui.exportCaptions}
     </button>

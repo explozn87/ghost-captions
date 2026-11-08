@@ -85,6 +85,15 @@ export function SettingsPanel({
       </label>
 
       <label className="settings__row">
+        <input
+          type="checkbox"
+          checked={settings.burnedInSubtitles}
+          onChange={(e) => onChange({ ...settings, burnedInSubtitles: e.target.checked })}
+        />
+        <span>{ui.burnedInSubtitles}</span>
+      </label>
+
+      <label className="settings__row">
         <span>{ui.ghostSize}</span>
         <select
           value={sizeChoiceFor(settings.sizeScale)}

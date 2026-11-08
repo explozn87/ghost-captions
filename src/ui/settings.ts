@@ -21,6 +21,12 @@ export interface Settings {
   sizeScale: number;
   /** Families the user has muted (Req 6.7). */
   mutedFamilies: ReadonlySet<Family>;
+  /**
+   * Whether the video already has subtitles burned into the picture (task
+   * 19.3). When true the reserved bottom band is enlarged so ghosts and fog
+   * stay clear of the baked-in text.
+   */
+  burnedInSubtitles: boolean;
 }
 
 /** Sensible defaults; reduced motion follows the OS at first mount. */
@@ -30,6 +36,7 @@ export function defaultSettings(lang: Lang, prefersReducedMotion: boolean): Sett
     reducedMotion: prefersReducedMotion,
     sizeScale: 1,
     mutedFamilies: new Set<Family>(),
+    burnedInSubtitles: false,
   };
 }
 
@@ -46,6 +53,13 @@ export const SIZE_SCALES: Record<SizeChoice, number> = {
   large: 1.2, // 36%
 };
 export const SIZE_CHOICES: SizeChoice[] = ['small', 'normal', 'large'];
+
+/**
+ * The reserved bottom caption band when the viewer declares the video already
+ * has subtitles burned into the picture (task 19.3): 22% of the frame, so
+ * ghosts and fog stay clear of the baked-in text even without a subtitle file.
+ */
+export const BURNED_IN_CAPTION_BAND = 0.22;
 
 /** The size choice nearest a stored sizeScale, for showing the current option. */
 export function sizeChoiceFor(sizeScale: number): SizeChoice {

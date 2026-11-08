@@ -18,7 +18,7 @@
 // on the four fields it needs (family/side/trend/join) and the public API
 // (`phrases`, `Lang`) stays stable.
 
-import type { EventTrack } from '../shared/types.ts';
+import type { DialogueCue, EventTrack } from '../shared/types.ts';
 import { tables, type Lang as I18nLang, type Strings } from '../i18n/index.ts';
 import { soundNoun } from '../i18n/soundLabel.ts';
 
@@ -84,21 +84,54 @@ function cueText(
  * caption text in the requested language. Speech events are skipped so the
  * file carries only what ordinary captions miss (Requirement 8.1). The result
  * is a plain string; the caller turns it into a download (Requirement 8.4).
+ *
+ * When the viewer has loaded a dialogue subtitle file (task 19.4), pass its
+ * cues as `dialogue`: the dialogue cues (verbatim, no brackets) are merged
+ * with the sound cues (bracketed, as above) in time order, so a creator gets
+ * one complete SDH-style file with both the spoken words and the sounds.
  */
-export function toWebVtt(track: EventTrack, lang: Lang): string {
+export function toWebVtt(
+  track: EventTrack,
+  lang: Lang,
+  dialogue: readonly DialogueCue[] = [],
+): string {
   const s = tables[lang] ?? tables.en;
   const blocks: string[] = ['WEBVTT'];
 
-  // Keep the original event order; events are already sorted by start time in
-  // the track, and skipping speech must not reorder anything (P5 checks that
-  // cue times stay ordered).
-  let index = 0;
+  // Collect every cue (sound + dialogue) with a start, end and text, then emit
+  // them in time order. Sound cues come from non-speech events only; dialogue
+  // cues are the spoken words verbatim. A stable secondary sort on end time,
+  // then source (sound before dialogue), keeps the output deterministic so the
+  // property test can assert ordering (P5).
+  interface Row { start: number; end: number; text: string; kind: 0 | 1 }
+  const rows: Row[] = [];
+
   for (const event of track.events) {
     if (event.isSpeech) continue;
+    rows.push({
+      start: event.start,
+      end: Math.max(event.end, event.start),
+      text: cueText(event, s, lang),
+      kind: 0, // sound
+    });
+  }
+  for (const cue of dialogue) {
+    rows.push({
+      start: cue.start,
+      end: Math.max(cue.end, cue.start),
+      text: cue.text,
+      kind: 1, // dialogue
+    });
+  }
+
+  rows.sort((a, b) => a.start - b.start || a.end - b.end || a.kind - b.kind);
+
+  let index = 0;
+  for (const row of rows) {
     index += 1;
-    const start = formatTimestamp(event.start);
-    const end = formatTimestamp(Math.max(event.end, event.start));
-    blocks.push(`${index}\n${start} --> ${end}\n${cueText(event, s, lang)}`);
+    const start = formatTimestamp(row.start);
+    const end = formatTimestamp(row.end);
+    blocks.push(`${index}\n${start} --> ${end}\n${row.text}`);
   }
 
   // A trailing newline keeps the file POSIX-friendly and matches how most

@@ -95,6 +95,10 @@ export const en: Strings = {
     muteFamily: 'Mute this sound',
     language: 'Language',
 
+    addSubtitles: 'Add dialogue subtitles',
+    replaceSubtitles: 'Replace dialogue subtitles',
+    burnedInSubtitles: 'Video has burned-in subtitles',
+
     colTime: 'Time',
     colSound: 'Sound',
     colDirection: 'Direction',

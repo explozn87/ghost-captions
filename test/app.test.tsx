@@ -142,4 +142,42 @@ describe('app shell end to end (fake classifier)', () => {
     // The app title switches to the Korean string.
     await waitFor(() => expect(screen.getByDisplayValue('한국어')).toBeInTheDocument());
   });
+
+  it('adds a dialogue subtitle file and merges it into the export (task 19.1, 19.4)', async () => {
+    render(<App decode={decodeSynthetic} classifier={scriptedClassifier()} initialLang="en" />);
+    const intakeInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(intakeInput, { target: { files: [makeFile()] } });
+
+    await screen.findByRole('table');
+
+    // Add a subtitle after the video, via the subtitle file input.
+    const srt = ['1', '00:00:00,500 --> 00:00:02,500', 'Who is there?', ''].join('\n');
+    const subFile = new File([srt], 'dialogue.srt', { type: 'text/plain' });
+    const subInput = document.querySelector('input[accept=".srt,.vtt"]') as HTMLInputElement;
+    expect(subInput).toBeTruthy();
+    fireEvent.change(subInput, { target: { files: [subFile] } });
+
+    // Once the subtitle is parsed, the button offers to replace it — wait for
+    // that to know the dialogue has been threaded into the watch phase.
+    await screen.findByRole('button', { name: 'Replace dialogue subtitles' });
+
+    // The export now merges the dialogue line with the sound cues.
+    const exportBtn = screen.getByRole('button', { name: 'Export captions' });
+    let capturedText: string | null = null;
+    const RealBlob = globalThis.Blob;
+    const blobSpy = vi
+      .spyOn(globalThis, 'Blob')
+      .mockImplementation((parts?: BlobPart[], opts?: BlobPropertyBag) => {
+        capturedText = (parts ?? []).map((p) => String(p)).join('');
+        return new RealBlob(parts ?? [], opts);
+      });
+    fireEvent.click(exportBtn);
+    blobSpy.mockRestore();
+
+    expect(capturedText).not.toBeNull();
+    const text = capturedText as unknown as string;
+    // Both the dialogue line (verbatim) and a bracketed sound cue are present.
+    expect(text).toContain('Who is there?');
+    expect(text).toContain('[Walk, footsteps, from the left]');
+  });
 });

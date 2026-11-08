@@ -20,11 +20,12 @@
 // the media never leaves the device (Req 1.1, 1.5).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EventTrack, StereoPcm } from '../shared/types.ts';
+import type { DialogueCue, EventTrack, StereoPcm } from '../shared/types.ts';
 import type { Classifier } from '../classify/classifier.ts';
 import { makeMediapipeClassifier } from '../classify/mediapipeClassifier.ts';
 import { decodeFile } from '../audio/decode.ts';
 import { analyse } from '../events/analyse.ts';
+import { parseSubtitles, readTextFile } from '../subtitles/parse.ts';
 import { asLang, DEFAULT_LANG, t } from '../i18n/index.ts';
 import type { Lang } from '../i18n/index.ts';
 import { defaultSettings, currentEventIndex, type Settings } from './settings.ts';
@@ -55,7 +56,13 @@ export interface AppProps {
 type Phase =
   | { kind: 'intake' }
   | { kind: 'analysing'; progress: number }
-  | { kind: 'watch'; track: EventTrack; src: string; credit: DemoClip | null }
+  | {
+      kind: 'watch';
+      track: EventTrack;
+      src: string;
+      credit: DemoClip | null;
+      dialogue: DialogueCue[];
+    }
   | { kind: 'error'; message: string };
 
 /** Default decoder: the real Web Audio `decodeFile` (task 10.1). */
@@ -98,10 +105,22 @@ export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Ele
   }, []);
 
   const onFile = useCallback(
-    async (file: File, credit: DemoClip | null = null) => {
+    async (file: File, credit: DemoClip | null = null, subtitleFile: File | null = null) => {
       setPhase({ kind: 'analysing', progress: 0 });
       setTime(0);
       try {
+        // Parse an optional subtitle file dropped alongside the video (task
+        // 19.1). A malformed file yields an empty cue list, never an error —
+        // the video still plays with ghosts.
+        let dialogue: DialogueCue[] = [];
+        if (subtitleFile) {
+          try {
+            const text = await readTextFile(subtitleFile);
+            dialogue = parseSubtitles(text);
+          } catch {
+            dialogue = [];
+          }
+        }
         const pcm = await decodeFn(file);
         const track = await analyse(pcm, classifierImpl, {
           onProgress: (p) => setPhase({ kind: 'analysing', progress: p }),
@@ -109,7 +128,7 @@ export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Ele
         if (srcRef.current) URL.revokeObjectURL(srcRef.current);
         const src = URL.createObjectURL(file);
         srcRef.current = src;
-        setPhase({ kind: 'watch', track, src, credit });
+        setPhase({ kind: 'watch', track, src, credit, dialogue });
       } catch (err) {
         const name = file.name;
         const message = `${strings.ui.decodeErrorPrefix} "${name}". ${strings.ui.decodeErrorSuggest}`;
@@ -119,6 +138,23 @@ export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Ele
     },
     [decodeFn, classifierImpl, strings.ui.decodeErrorPrefix, strings.ui.decodeErrorSuggest],
   );
+
+  /**
+   * Add (or replace) the dialogue subtitle file after the video is already
+   * playing (task 19.1): parse it and update the current watch phase in place.
+   */
+  const onSubtitleFile = useCallback((subtitleFile: File) => {
+    void (async () => {
+      let dialogue: DialogueCue[] = [];
+      try {
+        const text = await readTextFile(subtitleFile);
+        dialogue = parseSubtitles(text);
+      } catch {
+        dialogue = [];
+      }
+      setPhase((prev) => (prev.kind === 'watch' ? { ...prev, dialogue } : prev));
+    })();
+  }, []);
 
   const seek = useCallback((seconds: number) => {
     seekRef.current?.(seconds);
@@ -131,7 +167,7 @@ export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Ele
       </header>
 
       {phase.kind === 'intake' && (
-        <DropZone strings={strings} onFile={onFile}>
+        <DropZone strings={strings} onFile={(file, subtitle) => void onFile(file, null, subtitle ?? null)}>
           <DemoPicker
             strings={strings}
             onFile={(file, clip) => {
@@ -159,6 +195,8 @@ export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Ele
           track={phase.track}
           src={phase.src}
           credit={phase.credit}
+          dialogue={phase.dialogue}
+          onSubtitleFile={onSubtitleFile}
           settings={settings}
           onSettings={setSettings}
           time={time}
@@ -177,6 +215,8 @@ interface WatchScreenProps {
   track: EventTrack;
   src: string;
   credit: DemoClip | null;
+  dialogue: DialogueCue[];
+  onSubtitleFile: (file: File) => void;
   settings: Settings;
   onSettings: (s: Settings) => void;
   time: number;
@@ -189,6 +229,8 @@ function WatchScreen({
   track,
   src,
   credit,
+  dialogue,
+  onSubtitleFile,
   settings,
   onSettings,
   time,
@@ -198,6 +240,7 @@ function WatchScreen({
 }: WatchScreenProps): JSX.Element {
   const strings = t(settings.lang);
   const currentIndex = currentEventIndex(track.events, time);
+  const subtitleInputRef = useRef<HTMLInputElement>(null);
 
   return (
     <div className="watch">
@@ -221,6 +264,7 @@ function WatchScreen({
       <Player
         src={src}
         track={track}
+        dialogue={dialogue}
         settings={settings}
         onTimeUpdate={onTime}
         registerSeek={registerSeek}
@@ -235,7 +279,30 @@ function WatchScreen({
       />
 
       <div className="watch__controls">
-        <ExportButton track={track} lang={settings.lang} strings={strings} />
+        <ExportButton
+          track={track}
+          dialogue={dialogue}
+          lang={settings.lang}
+          strings={strings}
+        />
+        <button
+          type="button"
+          className="subtitle-button"
+          onClick={() => subtitleInputRef.current?.click()}
+        >
+          {dialogue.length > 0 ? strings.ui.replaceSubtitles : strings.ui.addSubtitles}
+        </button>
+        <input
+          ref={subtitleInputRef}
+          type="file"
+          accept=".srt,.vtt"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) onSubtitleFile(file);
+            e.target.value = '';
+          }}
+        />
         <AboutGhosts strings={strings} />
       </div>
 

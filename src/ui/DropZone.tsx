@@ -7,11 +7,15 @@
 
 import { useId, useRef, useState } from 'react';
 import type { Strings } from '../i18n/index.ts';
+import { isSubtitleFileName } from '../subtitles/parse.ts';
 
 export interface DropZoneProps {
   strings: Strings;
-  /** Called with the chosen file; the parent decodes it locally. */
-  onFile: (file: File) => void;
+  /**
+   * Called with the chosen media file and an optional subtitle file dropped
+   * alongside it (task 19.1); the parent decodes the media locally.
+   */
+  onFile: (file: File, subtitleFile?: File | null) => void;
   /** Slot for the demo picker, rendered under the drop prompt. */
   children?: React.ReactNode;
 }
@@ -24,11 +28,27 @@ export function DropZone({ strings, onFile, children }: DropZoneProps): JSX.Elem
 
   const pick = () => inputRef.current?.click();
 
+  /** Split dropped/picked files into the media file and an optional subtitle. */
+  const splitFiles = (files: FileList): { media: File | null; subtitle: File | null } => {
+    let media: File | null = null;
+    let subtitle: File | null = null;
+    for (const f of Array.from(files)) {
+      if (isSubtitleFileName(f.name)) {
+        if (!subtitle) subtitle = f;
+      } else if (!media) {
+        media = f;
+      }
+    }
+    return { media, subtitle };
+  };
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) onFile(file);
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+    const { media, subtitle } = splitFiles(files);
+    if (media) onFile(media, subtitle);
   };
 
   return (
@@ -54,11 +74,15 @@ export function DropZone({ strings, onFile, children }: DropZoneProps): JSX.Elem
       <input
         ref={inputRef}
         type="file"
-        accept="video/*,audio/*"
+        accept="video/*,audio/*,.srt,.vtt"
+        multiple
         hidden
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) onFile(file);
+          const files = e.target.files;
+          if (files && files.length > 0) {
+            const { media, subtitle } = splitFiles(files);
+            if (media) onFile(media, subtitle);
+          }
           // Reset so choosing the same file again re-triggers change.
           e.target.value = '';
         }}

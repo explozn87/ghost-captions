@@ -238,3 +238,81 @@ describe('formatTimestamp', () => {
     expect(formatTimestamp(-5)).toBe('00:00:00.000');
   });
 });
+
+describe('toWebVtt: merged dialogue cues (task 19.4)', () => {
+  const base: EventTrack['events'][number] = {
+    id: 'x',
+    start: 0,
+    end: 1,
+    family: 'unknown',
+    isSpeech: false,
+    topLabel: null,
+    labelScore: 0,
+    side: 'centre-unknown',
+    sideTrack: [],
+    sideConfidence: 0,
+    loudness: 0.5,
+    trend: 'steady',
+    ominous: 0.3,
+    beatPeriod: null,
+  };
+
+  function trackOf(...events: Partial<EventTrack['events'][number]>[]): EventTrack {
+    return {
+      duration: 100,
+      mono: false,
+      labelsAvailable: true,
+      events: events.map((e, i) => ({ ...base, ...e, id: String(i) })),
+    };
+  }
+
+  it('merges dialogue and sound cues in time order', () => {
+    const track = trackOf(
+      { family: 'footsteps', start: 0.5, end: 1.5 },
+      { family: 'impact', start: 5, end: 6 },
+    );
+    const dialogue = [
+      { start: 2, end: 4, text: 'Who is there?' },
+      { start: 7, end: 8, text: 'Nobody.' },
+    ];
+    const vtt = toWebVtt(track, 'en', dialogue);
+    const parsed = parseVtt(vtt);
+    expect(parsed.cues.map((c) => c.text.trim())).toEqual([
+      '[footsteps]',
+      'Who is there?',
+      '[impact]',
+      'Nobody.',
+    ]);
+    // Times stay non-decreasing.
+    for (let i = 1; i < parsed.cues.length; i++) {
+      expect(parsed.cues[i]!.start).toBeGreaterThanOrEqual(parsed.cues[i - 1]!.start);
+    }
+  });
+
+  it('keeps sound cues bracketed and dialogue cues verbatim', () => {
+    const vtt = toWebVtt(
+      trackOf({ family: 'door', side: 'left', start: 1, end: 2 }),
+      'en',
+      [{ start: 0, end: 1, text: 'Hello.' }],
+    );
+    expect(vtt).toContain('Hello.');
+    expect(vtt).toContain('[door, from the left]');
+    // The dialogue line itself carries no brackets.
+    expect(vtt).not.toContain('[Hello.]');
+  });
+
+  it('is unchanged when no dialogue cues are passed (back-compatible)', () => {
+    const track = trackOf({ family: 'impact', start: 0, end: 1 });
+    expect(toWebVtt(track, 'en')).toBe(toWebVtt(track, 'en', []));
+  });
+
+  it('still omits speech events while keeping dialogue cues', () => {
+    const track = trackOf(
+      { family: 'scream', isSpeech: true, start: 0, end: 1 },
+      { family: 'impact', start: 3, end: 4 },
+    );
+    const vtt = toWebVtt(track, 'en', [{ start: 1, end: 2, text: 'A line.' }]);
+    const parsed = parseVtt(vtt);
+    expect(parsed.cues.map((c) => c.text.trim())).toEqual(['A line.', '[impact]']);
+  });
+});

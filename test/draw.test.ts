@@ -3,6 +3,8 @@ import {
   draw,
   familyPathSource,
   spriteImageUrl,
+  measureDialogueBandFrac,
+  wrapDialogueLines,
   type Ctx2D,
   type SpriteImageLoader,
 } from '../src/overlay/draw.ts';
@@ -486,5 +488,81 @@ describe('draw: ambient event shows its family sprite and label (task 18.3)', ()
     for (const c of ctx.calls.filter((c) => c.op === 'fillText')) {
       expect(c.args[2] as number).toBeLessThan(captionTop);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 19.2: dialogue subtitles in the bottom caption band.
+// ---------------------------------------------------------------------------
+
+describe('draw: dialogue subtitle in the caption band (task 19.2)', () => {
+  it('draws the dialogue text on a dark plate when a cue is passed', () => {
+    const ctx = makeFakeCtx(800, 600);
+    draw(ctx, [], [], 0, false, { loader: silhouetteOnlyLoader, dialogue: 'Who is there?' });
+    const texts = ctx.calls.filter((c) => c.op === 'fillText').map((c) => c.args[0]);
+    expect(texts).toContain('Who is there?');
+    // A dark plate (near-opaque) sits behind it for AA contrast (Req 10.2).
+    const plate = ctx.calls.find(
+      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('10,12,18'),
+    );
+    expect(plate).toBeDefined();
+  });
+
+  it('draws nothing extra when no dialogue cue is active', () => {
+    const ctx = makeFakeCtx(800, 600);
+    draw(ctx, [], [], 0, false, { loader: silhouetteOnlyLoader, dialogue: null });
+    expect(ctx.calls.filter((c) => c.op === 'fillText')).toHaveLength(0);
+  });
+
+  it('places the dialogue plate within the bottom caption band', () => {
+    const H = 600;
+    const ctx = makeFakeCtx(800, H);
+    draw(ctx, [], [], 0, false, { loader: silhouetteOnlyLoader, dialogue: 'A line.' });
+    // The dialogue text is the last fillText; its y is in the lower part.
+    const texts = ctx.calls.filter((c) => c.op === 'fillText');
+    const y = texts[texts.length - 1]!.args[2] as number;
+    expect(y).toBeGreaterThan(H * 0.7);
+  });
+});
+
+describe('wrapDialogueLines (task 19.2)', () => {
+  // The fake ctx measures text as length*8 px.
+  const ctx = makeFakeCtx(800, 600);
+
+  it('keeps a short cue on one line', () => {
+    expect(wrapDialogueLines(ctx, 'Hello.', 1000)).toEqual(['Hello.']);
+  });
+
+  it('honours explicit newlines up to two lines', () => {
+    expect(wrapDialogueLines(ctx, 'Line one\nLine two', 1000)).toEqual(['Line one', 'Line two']);
+  });
+
+  it('never returns more than two lines', () => {
+    const long = 'one two three four five six seven eight nine ten eleven twelve';
+    const lines = wrapDialogueLines(ctx, long, 80); // force wrapping (10 chars ~ 80px)
+    expect(lines.length).toBeLessThanOrEqual(2);
+  });
+
+  it('ellipsises when the text does not fit in two lines', () => {
+    const long = 'one two three four five six seven eight nine ten eleven twelve thirteen';
+    const lines = wrapDialogueLines(ctx, long, 80);
+    expect(lines[lines.length - 1]!.endsWith('…')).toBe(true);
+  });
+});
+
+describe('measureDialogueBandFrac (task 19.2)', () => {
+  it('is zero for an empty or absent cue', () => {
+    const ctx = makeFakeCtx(800, 600);
+    expect(measureDialogueBandFrac(ctx, null)).toBe(0);
+    expect(measureDialogueBandFrac(ctx, '')).toBe(0);
+    expect(measureDialogueBandFrac(ctx, '   ')).toBe(0);
+  });
+
+  it('is larger for a two-line cue than a one-line cue (taller cues push ghosts up)', () => {
+    const ctx = makeFakeCtx(800, 600);
+    const oneLine = measureDialogueBandFrac(ctx, 'Short.');
+    const twoLine = measureDialogueBandFrac(ctx, 'First line\nSecond line');
+    expect(twoLine).toBeGreaterThan(oneLine);
+    expect(oneLine).toBeGreaterThan(0);
   });
 });

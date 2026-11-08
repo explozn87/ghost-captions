@@ -57,15 +57,33 @@ export interface OverlaySettings {
   sizeScale: number;
   /** Families the user has muted; their sprites/fogs are omitted (Req 6.7). */
   mutedFamilies: ReadonlySet<SoundEvent['family']>;
+  /**
+   * Fraction of the viewport height reserved at the bottom for ordinary
+   * subtitles (task 19.2/19.3). Optional: when omitted the default
+   * {@link CAPTION_BAND} is used. The Player raises this when a dialogue cue is
+   * on screen (measured from the rendered cue) or when the "burned-in
+   * subtitles" setting is on, so ghosts and fog push further up.
+   */
+  captionBandFrac?: number;
 }
 
 /**
- * Fraction of the viewport height reserved at the bottom for ordinary
- * subtitles. Ghost centres stay above `1 - CAPTION_BAND`, and their drawn
- * radius is accounted for so even a large ghost cannot reach into the band
- * (Req 6.5, property P6).
+ * Default fraction of the viewport height reserved at the bottom for ordinary
+ * subtitles. Ghost centres stay above `1 - band`, and their drawn radius is
+ * accounted for so even a large ghost cannot reach into the band (Req 6.5,
+ * property P6). The effective band can be raised per frame via
+ * {@link OverlaySettings.captionBandFrac} when a dialogue cue is on screen or
+ * burned-in subtitles are declared (task 19.2/19.3); it is never lowered below
+ * this default.
  */
 export const CAPTION_BAND = 0.18;
+
+/** The effective caption-band fraction for a frame, never below the default. */
+export function captionBandOf(settings: OverlaySettings): number {
+  const frac = settings.captionBandFrac;
+  if (frac == null || !Number.isFinite(frac)) return CAPTION_BAND;
+  return clamp(Math.max(frac, CAPTION_BAND), CAPTION_BAND, 0.6);
+}
 
 /**
  * Upper fraction of the viewport ghosts live in (design.md: upper 70 %). The
@@ -387,6 +405,11 @@ export function layout(
   // configured ghost diameter (task 17.1).
   const baseRadius = baseRadiusFrac(cfg);
 
+  // The effective caption band for this frame (task 19.2/19.3): raised by the
+  // Player when a dialogue cue is on screen or burned-in subtitles are
+  // declared, so ghosts push further up; never below the default.
+  const captionBand = captionBandOf(settings);
+
   drawable.forEach((event, i) => {
     const isBig = i === loudestIndex;
     const markerFactor = isBig ? 1 : MARKER_SCALE;
@@ -402,7 +425,7 @@ export function layout(
       ? (baseRadius * scale * minDim) / viewport.height
       : 0;
 
-    const yMax = 1 - CAPTION_BAND - radiusFracH;
+    const yMax = 1 - captionBand - radiusFracH;
     const slots = Math.max(1, drawable.length);
     const frac = slots > 1 ? i / (slots - 1) : 0;
     const yHigh = Math.max(Y_MIN, yMax);

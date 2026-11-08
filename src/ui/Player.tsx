@@ -15,17 +15,20 @@
 // output.
 
 import { useEffect, useRef } from 'react';
-import type { EventTrack } from '../shared/types.ts';
+import type { DialogueCue, EventTrack } from '../shared/types.ts';
 import { activeEvents } from '../events/buildEvents.ts';
 import { layout, edgeFogs, fogDecayDuration } from '../overlay/layout.ts';
-import { draw, preloadSpriteImages } from '../overlay/draw.ts';
+import { draw, preloadSpriteImages, measureDialogueBandFrac } from '../overlay/draw.ts';
+import { activeDialogueCue } from '../subtitles/parse.ts';
 import type { Settings } from './settings.ts';
-import { toOverlaySettings } from './settings.ts';
+import { toOverlaySettings, BURNED_IN_CAPTION_BAND } from './settings.ts';
 
 export interface PlayerProps {
   /** Object URL for the local media; created and revoked by the parent. */
   src: string;
   track: EventTrack;
+  /** Dialogue subtitle cues to show in the caption band (task 19.2). */
+  dialogue?: readonly DialogueCue[];
   settings: Settings;
   /** Reports the current playback time so sibling panels can highlight. */
   onTimeUpdate?: (t: number) => void;
@@ -49,6 +52,7 @@ interface RvfcCapable {
 export function Player({
   src,
   track,
+  dialogue,
   settings,
   onTimeUpdate,
   registerSeek,
@@ -61,6 +65,8 @@ export function Player({
   settingsRef.current = settings;
   const trackRef = useRef<EventTrack>(track);
   trackRef.current = track;
+  const dialogueRef = useRef<readonly DialogueCue[]>(dialogue ?? []);
+  dialogueRef.current = dialogue ?? [];
   const onTimeRef = useRef<PlayerProps['onTimeUpdate']>(onTimeUpdate);
   onTimeRef.current = onTimeUpdate;
 
@@ -112,7 +118,18 @@ export function Player({
       if (canvas.height !== h) canvas.height = h;
 
       const s = settingsRef.current;
-      const overlay = toOverlaySettings(s);
+
+      // The active dialogue cue, if any (task 19.2). Its rendered height is
+      // measured so the caption band grows to fit it; when the viewer declares
+      // burned-in subtitles the band is at least 22% (task 19.3). The larger of
+      // the two wins so ghosts always clear whatever is at the bottom.
+      const cue = activeDialogueCue(dialogueRef.current, time);
+      const dialogueText = cue?.text ?? null;
+      const measuredBand = measureDialogueBandFrac(ctx, dialogueText);
+      const burnedInBand = s.burnedInSubtitles ? BURNED_IN_CAPTION_BAND : 0;
+      const captionBandFrac = Math.max(measuredBand, burnedInBand);
+
+      const overlay = { ...toOverlaySettings(s), captionBandFrac };
       const active = activeEvents(trackRef.current, time);
       const sprites = layout(active, time, { width: w, height: h }, overlay);
       // Edge fog (task 16.3) needs ambient events that are active OR ended
@@ -122,7 +139,10 @@ export function Player({
         (e) => e.start <= time && e.end + decay > time,
       );
       const fogs = edgeFogs(fogCandidates, time, overlay);
-      draw(ctx, sprites, fogs, time, s.reducedMotion);
+      draw(ctx, sprites, fogs, time, s.reducedMotion, {
+        captionBandFrac,
+        dialogue: dialogueText,
+      });
 
       if (time !== lastReported) {
         lastReported = time;

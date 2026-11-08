@@ -6,6 +6,7 @@ import {
   fogDecayDuration,
   spriteLabel,
   baseRadiusFrac,
+  captionBandOf,
   CAPTION_BAND,
   CENTRE_FACE_BAND,
   CENTRE_FACE_OPACITY,
@@ -556,5 +557,41 @@ describe('layout: edgeFogs are visible and textured (task 18)', () => {
     // Density rises with loudness/ominousness.
     expect(wind.textureDensity).toBeGreaterThan(0);
     expect(tense.textureDensity).toBeGreaterThan(rain.textureDensity);
+  });
+});
+
+describe('layout: caption band grows for dialogue / burned-in subtitles (task 19.2/19.3)', () => {
+  const vp: Viewport = { width: 1000, height: 1000 };
+
+  it('captionBandOf defaults to the standard band and is never below it', () => {
+    expect(captionBandOf(defaultSettings)).toBeCloseTo(CAPTION_BAND, 10);
+    // A smaller requested band is clamped up to the default.
+    expect(captionBandOf({ ...defaultSettings, captionBandFrac: 0.05 })).toBeCloseTo(CAPTION_BAND, 10);
+    // A larger requested band is honoured.
+    expect(captionBandOf({ ...defaultSettings, captionBandFrac: 0.3 })).toBeCloseTo(0.3, 10);
+  });
+
+  it('an enlarged caption band pushes ghosts further up the frame', () => {
+    // A centre-unknown hover ghost settles at a y clamped by the band; a larger
+    // band gives a smaller (higher) y for the same event.
+    const ev = makeEvent({ family: 'siren', side: 'centre-unknown', start: 0, end: 10, loudness: 0.1 });
+    const normal = layout([ev], 5, vp, defaultSettings)[0]!;
+    const enlarged = layout([ev], 5, vp, { ...defaultSettings, captionBandFrac: 0.4 })[0]!;
+    expect(enlarged.y).toBeLessThanOrEqual(normal.y);
+  });
+
+  it('no sprite reaches into the enlarged caption band (task 19.2)', () => {
+    const band = 0.3;
+    const settings: OverlaySettings = { ...defaultSettings, captionBandFrac: band };
+    const events = FAMILIES.map((family, i) =>
+      makeEvent({ id: `e${i}`, family, side: 'centre-unknown', start: 0, end: 10, loudness: 0.8 }),
+    );
+    const sprites = layout(events, 5, vp, settings);
+    const minDim = Math.min(vp.width, vp.height);
+    const bandTopFrac = 1 - band;
+    for (const sp of sprites) {
+      const radiusFracH = (baseRadiusFrac() * sp.scale * minDim) / vp.height;
+      expect(sp.y + radiusFracH).toBeLessThanOrEqual(bandTopFrac + 1e-9);
+    }
   });
 });

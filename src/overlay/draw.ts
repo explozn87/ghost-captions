@@ -29,7 +29,7 @@
 // motion (Req 10.3).
 
 import type { EdgeFog, Family, FogEdge, FogTexture, GhostSprite } from '../shared/types.ts';
-import { FOG_CLEAR_CENTRE, baseRadiusFrac } from './layout.ts';
+import { FOG_CLEAR_CENTRE, baseRadiusFrac, CAPTION_BAND } from './layout.ts';
 
 /**
  * A minimal 2D drawing surface. Declared structurally (not as
@@ -250,6 +250,17 @@ const LABEL_PAD_Y = 4;
 /** Options for `draw`, so the sprite loader can be injected in tests. */
 export interface DrawOptions {
   loader?: SpriteImageLoader;
+  /**
+   * Fraction of the viewport height reserved at the bottom for subtitles (task
+   * 19.2/19.3). Fog textures and ambient sprites stay above it. Defaults to
+   * {@link CAPTION_BAND}.
+   */
+  captionBandFrac?: number;
+  /**
+   * The active dialogue cue text to draw in the bottom caption band (task
+   * 19.2), or null when none. White text on a dark plate, at most two lines.
+   */
+  dialogue?: string | null;
 }
 
 /**
@@ -280,11 +291,12 @@ export function draw(
   const W = ctx.canvas.width;
   const H = ctx.canvas.height;
   const minDim = Math.min(W, H);
+  const captionBand = Math.max(CAPTION_BAND, options.captionBandFrac ?? CAPTION_BAND);
   ctx.clearRect(0, 0, W, H);
 
   // Ambient edge fog sits behind the ghosts.
   for (const fog of fogs) {
-    drawEdgeFog(ctx, fog, time, reducedMotion, loader, minDim);
+    drawEdgeFog(ctx, fog, time, reducedMotion, loader, minDim, captionBand);
   }
 
   for (const sprite of sprites) {
@@ -303,6 +315,12 @@ export function draw(
     drawFog(ctx, cx + dx, cy + dy, radius, sprite.fog, time, reducedMotion);
     drawGhost(ctx, sprite, cx + dx, cy + dy, radius, loader);
     drawLabel(ctx, sprite.label, cx + dx, cy + dy + radius * 0.2, sprite.opacity);
+  }
+
+  // The active dialogue cue in the bottom caption band (task 19.2): drawn last
+  // so it sits above the ghosts, white text on a dark plate, at most two lines.
+  if (options.dialogue != null && options.dialogue.trim().length > 0) {
+    drawDialogue(ctx, options.dialogue, W, H);
   }
 }
 
@@ -371,6 +389,7 @@ function drawEdgeFog(
   reducedMotion: boolean,
   loader: SpriteImageLoader,
   minDim: number,
+  captionBand: number,
 ): void {
   if (fog.opacity <= 0) return;
   const W = ctx.canvas.width;
@@ -390,7 +409,9 @@ function drawEdgeFog(
     ctx.fillStyle = grad as unknown as CanvasGradient;
     ctx.globalAlpha = 1;
     const rectX = which === 'left' ? 0 : W - bandW;
-    ctx.fillRect(rectX, 0, bandW, H);
+    // The vignette stops at the top of the caption band so it never covers the
+    // dialogue subtitle (task 19.2); the central 60% is already clear.
+    ctx.fillRect(rectX, 0, bandW, H * (1 - captionBand));
     ctx.restore();
   };
 
@@ -401,7 +422,7 @@ function drawEdgeFog(
   // Band texture inside each covered edge (task 18.2).
   for (const e of paintedEdges) {
     const bandX = e === 'left' ? 0 : W - bandW;
-    drawFogTexture(ctx, fog, bandX, bandW, H, time, reducedMotion);
+    drawFogTexture(ctx, fog, bandX, bandW, H, time, reducedMotion, captionBand);
   }
 
   // The family's sprite at half the point-ghost size, in the upper band (task
@@ -431,11 +452,12 @@ function drawFogTexture(
   H: number,
   time: number,
   reducedMotion: boolean,
+  captionBand: number,
 ): void {
   const texture: FogTexture = fog.texture;
   if (texture === 'none') return;
-  // The texture lives in the upper band only, clear of the caption band.
-  const topH = H * (1 - 0.18);
+  // The texture lives above the caption band, clear of the dialogue subtitle.
+  const topH = H * (1 - captionBand);
   // A few shapes, more when denser; at least one so the texture always reads.
   const count = 2 + Math.round(fog.textureDensity * 4);
   const alpha = Math.min(1, fog.opacity * 1.4);
@@ -604,4 +626,127 @@ function drawLabel(ctx: Ctx2D, label: string, cx: number, cy: number, opacity: n
 
 function clamp01(x: number): number {
   return x < 0 ? 0 : x > 1 ? 1 : x;
+}
+
+/** Dialogue subtitle typography (task 19.2), larger than the ghost labels. */
+const DIALOGUE_FONT_PX = 22;
+const DIALOGUE_LINE_PX = 30;
+const DIALOGUE_PAD_X = 12;
+const DIALOGUE_PAD_Y = 8;
+/** Bottom margin of the dialogue plate as a fraction of the viewport height. */
+const DIALOGUE_BOTTOM_FRAC = 0.03;
+/** At most two lines are shown (task 19.2). */
+const DIALOGUE_MAX_LINES = 2;
+
+/**
+ * Split a dialogue cue into at most two display lines (task 19.2). Explicit
+ * newlines in the cue are honoured first; a long single line is wrapped on
+ * word boundaries using the measured text width against `maxWidth`. If the
+ * text still does not fit in two lines, the second line is truncated with an
+ * ellipsis so the plate never grows past two lines.
+ */
+export function wrapDialogueLines(
+  ctx: Pick<Ctx2D, 'measureText' | 'font'>,
+  text: string,
+  maxWidth: number,
+): string[] {
+  const prevFont = ctx.font;
+  ctx.font = `${DIALOGUE_FONT_PX}px sans-serif`;
+  const fits = (s: string) => ctx.measureText(s).width <= maxWidth;
+
+  const rawLines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  const out: string[] = [];
+  for (const raw of rawLines) {
+    if (out.length >= DIALOGUE_MAX_LINES) break;
+    if (fits(raw)) {
+      out.push(raw);
+      continue;
+    }
+    // Word-wrap this line into as many display lines as needed.
+    const words = raw.split(/\s+/);
+    let line = '';
+    for (const word of words) {
+      const candidate = line ? `${line} ${word}` : word;
+      if (fits(candidate) || line === '') {
+        line = candidate;
+      } else {
+        out.push(line);
+        line = word;
+        if (out.length >= DIALOGUE_MAX_LINES) break;
+      }
+    }
+    if (line && out.length < DIALOGUE_MAX_LINES) out.push(line);
+  }
+
+  const limited = out.slice(0, DIALOGUE_MAX_LINES);
+  // Ellipsis the last line if we had to drop content.
+  if (
+    limited.length === DIALOGUE_MAX_LINES &&
+    (out.length > DIALOGUE_MAX_LINES || rawLines.join(' ').length > limited.join(' ').length)
+  ) {
+    let last = limited[DIALOGUE_MAX_LINES - 1]!;
+    while (last.length > 1 && !fits(`${last}…`)) last = last.slice(0, -1);
+    limited[DIALOGUE_MAX_LINES - 1] = `${last}…`;
+  }
+  ctx.font = prevFont;
+  return limited;
+}
+
+/**
+ * The fraction of the viewport height the rendered dialogue cue occupies (task
+ * 19.2), so the layout can raise the caption band to match: taller cues push
+ * ghosts further up. Returns 0 for an empty cue. The value includes the plate
+ * padding and the bottom margin, matching what `drawDialogue` paints.
+ */
+export function measureDialogueBandFrac(
+  ctx: Pick<Ctx2D, 'measureText' | 'font' | 'canvas'>,
+  text: string | null | undefined,
+): number {
+  if (text == null || text.trim().length === 0) return 0;
+  const H = ctx.canvas.height;
+  if (H <= 0) return 0;
+  const maxWidth = ctx.canvas.width * 0.9 - DIALOGUE_PAD_X * 2;
+  const lines = wrapDialogueLines(ctx, text, maxWidth);
+  if (lines.length === 0) return 0;
+  const plateH = lines.length * DIALOGUE_LINE_PX + DIALOGUE_PAD_Y * 2;
+  const totalPx = plateH + H * DIALOGUE_BOTTOM_FRAC;
+  return totalPx / H;
+}
+
+/**
+ * Draw the active dialogue cue in the bottom caption band (task 19.2): white
+ * text on a dark plate at AA contrast (Req 10.2), centred horizontally, at most
+ * two lines (longer cues wrap then ellipsis). The plate sits just above the
+ * bottom edge. Ghosts, labels and edge fog are kept out of this band by the
+ * caller passing the measured band fraction to `layout`/`draw`.
+ */
+function drawDialogue(ctx: Ctx2D, text: string, W: number, H: number): void {
+  const maxWidth = W * 0.9 - DIALOGUE_PAD_X * 2;
+  const lines = wrapDialogueLines(ctx, text, maxWidth);
+  if (lines.length === 0) return;
+
+  ctx.save();
+  ctx.font = `${DIALOGUE_FONT_PX}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  let widest = 0;
+  for (const line of lines) {
+    const w = ctx.measureText(line).width;
+    if (w > widest) widest = w;
+  }
+  const plateW = widest + DIALOGUE_PAD_X * 2;
+  const plateH = lines.length * DIALOGUE_LINE_PX + DIALOGUE_PAD_Y * 2;
+  const plateX = W / 2 - plateW / 2;
+  const plateY = H - plateH - H * DIALOGUE_BOTTOM_FRAC;
+
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(10,12,18,0.82)';
+  ctx.fillRect(plateX, plateY, plateW, plateH);
+
+  ctx.fillStyle = 'rgba(245,247,252,1)';
+  lines.forEach((line, i) => {
+    ctx.fillText(line, W / 2, plateY + DIALOGUE_PAD_Y + i * DIALOGUE_LINE_PX);
+  });
+  ctx.restore();
 }
