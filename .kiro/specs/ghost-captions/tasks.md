@@ -30,14 +30,14 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
   - [x] 4.2 Tests: balance sign matches pan on synthetic bursts; flux peaks at burst onsets; lowShare high for a 100 Hz tone and low for 4 kHz.
     - _Requirements: 2.4_
 
-- [ ] 5. Event building (pure)
-  - [ ] 5.1 `buildEvents()` steps 1–3 (family per window, merge, short-event drop with onset keep) and `activeEvents()`.
+- [x] 5. Event building (pure)
+  - [x] 5.1 `buildEvents()` steps 1–3 (family per window, merge, short-event drop with onset keep) and `activeEvents()`.
     - _Requirements: 3.3, 3.4, 3.5, 3.6_
-  - [ ] 5.2 Side, side track, loudness percentile, trend.
+  - [x] 5.2 Side, side track, loudness percentile, trend.
     - _Requirements: 4.1, 4.2, 4.4, 4.5, 5.1, 5.4_
-  - [ ] 5.3 Ominousness and beat period.
+  - [x] 5.3 Ominousness and beat period.
     - _Requirements: 5.2, 5.3_
-  - [ ] 5.4 Property tests P1–P4 from design.md, plus example tests on the Sintel fixture (families appear in scene order; speech is never a ghost).
+  - [x] 5.4 Property tests P1–P4 from design.md, plus example tests on the Sintel fixture (families appear in scene order; speech is never a ghost).
     - _Requirements: 4.3, NFR-7_
 
 - [ ] 6. Export (pure)
