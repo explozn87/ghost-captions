@@ -1,0 +1,14 @@
+{
+  "name": "builder",
+  "description": "Implements spec tasks; may run only the project's typecheck and test scripts",
+  "tools": ["fs_read", "fs_write", "execute_bash"],
+  "allowedTools": ["fs_read", "fs_write", "execute_bash"],
+  "toolsSettings": {
+    "execute_bash": {
+      "allowedCommands": ["npm run -s typecheck", "npm run -s test", "npm run typecheck", "npm run test", "npx vitest run.*"],
+      "deniedCommands": [".*&&.*", ".*;.*", ".*[|].*", ".*>.*"],
+      "autoAllowReadonly": false
+    }
+  },
+  "resources": ["file://.kiro/steering/**/*.md"]
+}
