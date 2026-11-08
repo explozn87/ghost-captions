@@ -11,5 +11,10 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
     include: ['test/**/*.test.{ts,tsx}', 'src/**/*.test.{ts,tsx}'],
+    // Use the worker-thread pool rather than the default child-process `forks`
+    // pool: on this Windows host spawning fork workers fails intermittently
+    // (process exit 0xC0000142, "DLL initialization failed"). Threads run the
+    // same pure/jsdom tests without that spawn step.
+    pool: 'threads',
   },
 });

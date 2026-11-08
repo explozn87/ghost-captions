@@ -50,10 +50,10 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
   - [x] 7.1 `en.ts`, `ko.ts`, `t()` helper, default English; key-parity test.
     - _Requirements: 9.1, 9.2_
 
-- [ ] 8. Overlay layout and drawing
-  - [ ] 8.1 Pure `layout()` (bands, size, fog, tremble, travel, caption-band exclusion) with property test P6.
+- [x] 8. Overlay layout and drawing
+  - [x] 8.1 Pure `layout()` (bands, size, fog, tremble, travel, caption-band exclusion) with property test P6.
     - _Requirements: 6.2, 6.5_
-  - [ ] 8.2 `draw()` on canvas: one silhouette per family, fog, label backing plate, reduced-motion path, tremble cap (no flashes > 3 Hz).
+  - [x] 8.2 `draw()` on canvas: one silhouette per family, fog, label backing plate, reduced-motion path, tremble cap (no flashes > 3 Hz).
     - _Requirements: 6.3, 6.4, 6.6, 10.2, 10.3_
 
 - [ ] 9. App shell wired end to end with the fake classifier
