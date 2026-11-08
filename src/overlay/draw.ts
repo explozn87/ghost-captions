@@ -29,7 +29,7 @@
 // motion (Req 10.3).
 
 import type { EdgeFog, Family, FogEdge, GhostSprite } from '../shared/types.ts';
-import { FOG_CLEAR_CENTRE } from './layout.ts';
+import { FOG_CLEAR_CENTRE, baseRadiusFrac } from './layout.ts';
 
 /**
  * A minimal 2D drawing surface. Declared structurally (not as
@@ -235,8 +235,12 @@ const TREMBLE_AMPLITUDE = 0.08;
 const FOG_PULSE_DEPTH = 0.1;
 const FOG_PULSE_HZ = 0.25;
 
-/** Base sprite radius in pixels before per-sprite scale (matches layout). */
-const BASE_RADIUS_PX = 0.08;
+/**
+ * Base sprite radius as a fraction of the shorter viewport dimension, read from
+ * the shared config via layout so draw and layout size ghosts identically
+ * (task 17.1).
+ */
+const BASE_RADIUS_PX = baseRadiusFrac();
 
 /** Label typography. The backing plate guarantees AA contrast (Req 10.2). */
 const LABEL_FONT_PX = 16;

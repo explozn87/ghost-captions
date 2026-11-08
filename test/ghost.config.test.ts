@@ -112,4 +112,33 @@ describe('ghost.config (task 2.2)', () => {
   it('ranks gunshot at least as ominous as impact (gunfire never softened, task 16.1)', () => {
     expect(ghostConfig.priors.gunshot.value).toBeGreaterThanOrEqual(ghostConfig.priors.impact.value);
   });
+
+  it('carries the bigger-ghost size values with a why in the documented ranges (task 17.1)', () => {
+    expectHasWhy(ghostConfig.ghostDiameterFrac);
+    expectHasWhy(ghostConfig.loudScaleMin);
+    expectHasWhy(ghostConfig.loudScaleMax);
+    expect(ghostConfig.ghostDiameterFrac.value).toBe(0.3);
+    // The narrow loud band keeps small ghosts recognisable (0.85..1.15).
+    expect(ghostConfig.loudScaleMin.value).toBe(0.85);
+    expect(ghostConfig.loudScaleMax.value).toBe(1.15);
+    expect(ghostConfig.loudScaleMin.value).toBeLessThan(ghostConfig.loudScaleMax.value);
+  });
+
+  it('gives every family a motion kind with a why (task 17.3)', () => {
+    const kinds = ghostConfig.motionByFamily.value;
+    expect(Object.keys(kinds).sort()).toEqual([...ALL_FAMILIES].sort());
+    for (const fam of ALL_FAMILIES) {
+      expect(['cross', 'edgeReact', 'hover']).toContain(kinds[fam]);
+    }
+    expect(ghostConfig.motionByFamily.why.trim().length).toBeGreaterThan(0);
+    // The families named in the task map to the kinds the task names.
+    expect(kinds.vehicle).toBe('cross');
+    expect(kinds.footsteps).toBe('cross');
+    for (const f of ['gunshot', 'impact', 'knock', 'door', 'glass', 'scream'] as Family[]) {
+      expect(kinds[f]).toBe('edgeReact');
+    }
+    for (const f of ['singing', 'laughter', 'crying', 'siren', 'animal', 'fire', 'unknown'] as Family[]) {
+      expect(kinds[f]).toBe('hover');
+    }
+  });
 });

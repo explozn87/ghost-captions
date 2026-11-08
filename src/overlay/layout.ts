@@ -103,18 +103,40 @@ const WITHDRAW_TIME = 0.4;
 export const FOG_CLEAR_CENTRE = 0.6;
 
 /**
- * Base ghost radius as a fraction of the smaller viewport dimension, before
- * the loudness/size multipliers. Picked so a mid-loudness ghost reads clearly
- * without crowding at `maxOnScreen` (NFR-1).
+ * The base ghost radius as a fraction of the shorter viewport dimension, half
+ * the configured ghost diameter (task 17.1). Shared with `draw` so layout and
+ * drawing size ghosts identically from one config value.
  */
-const BASE_RADIUS = 0.08;
+export function baseRadiusFrac(cfg: GhostConfig = ghostConfig): number {
+  return cfg.ghostDiameterFrac.value / 2;
+}
 
-/** Loudness maps scale across this range: quiet sounds are smaller, not gone. */
-const MIN_LOUD_SCALE = 0.6;
-const MAX_LOUD_SCALE = 1.4;
-
-/** How much `rising`/`falling` grows/shrinks scale across the event. */
+/**
+ * How much `rising`/`falling` grows/shrinks scale across the event. */
 const TREND_SCALE_SWING = 0.25;
+
+/**
+ * Fraction of full size a non-loudest simultaneous point ghost is drawn at, so
+ * only one big ghost shows at a time and large ghosts never pile up over faces
+ * (task 17.2). Markers keep their label.
+ */
+export const MARKER_SCALE = 0.25;
+
+/**
+ * The central horizontal band a full-size ghost's opacity is dimmed inside, to
+ * keep the face region light (task 17.4): the central 40% of the frame width,
+ * i.e. 0.3..0.7.
+ */
+export const CENTRE_FACE_BAND = 0.4;
+/** The dimmed opacity a full-size ghost takes while its centre is in that band. */
+export const CENTRE_FACE_OPACITY = 0.55;
+
+/** Scale-pop (one pulse) for an `edgeReact` ghost just after it arrives (task 17.3). */
+const EDGE_POP_AMOUNT = 0.3;
+const EDGE_POP_TIME = 0.3;
+/** Gentle sway (fraction of a band width) for a `hover` ghost (task 17.3). */
+const HOVER_SWAY_X = 0.03;
+const HOVER_SWAY_HZ = 0.2;
 
 /**
  * Hard cap on tremble frequency (Hz). WCAG 2.3.1 forbids more than three
@@ -165,16 +187,63 @@ function trackedX(event: SoundEvent, t: number, reducedMotion: boolean): number 
 }
 
 /**
- * The horizontal position of a point ghost, including the enter/withdraw glide
- * for a known side (task 16.4). A side ghost starts just off its edge, glides
- * in over `ENTER_TIME`, sits at its band, then glides back out over the last
- * `WITHDRAW_TIME`. A centre-unknown ghost always sits at its band (it fades in
- * place via opacity instead — see `pointGhostOpacity`). Under reduced motion
- * the ghost sits at its settled band with no glide (Req 6.6).
+ * Whether the event's `sideTrack` records a measured change between the left
+ * and right bands (task 17.3, `cross`). A travelling car is left→right; a
+ * static sound stays on one side. `centre-unknown` steps do not count as a
+ * side change.
  */
-function pointX(event: SoundEvent, t: number, reducedMotion: boolean): number {
+function hasMeasuredSideChange(event: SoundEvent): boolean {
+  let seenLeft = false;
+  let seenRight = false;
+  for (const p of event.sideTrack) {
+    if (p.side === 'left') seenLeft = true;
+    else if (p.side === 'right') seenRight = true;
+  }
+  return seenLeft && seenRight;
+}
+
+/**
+ * The motion kind for an event (task 17.3), read from the config table by
+ * family. Ambient families never reach here (they are edge fog).
+ */
+function motionOf(event: SoundEvent, cfg: GhostConfig): import('../config/ghost.config.ts').MotionKind {
+  return cfg.motionByFamily.value[event.family];
+}
+
+/**
+ * The horizontal position of a point ghost, by motion kind (task 17.3),
+ * including the enter/withdraw glide for a known side (task 16.4).
+ *
+ *   - `cross`: if the sideTrack has a measured left↔right change, follow the
+ *     tracked interpolation across the frame; otherwise glide in from its edge
+ *     and out, as before.
+ *   - `edgeReact`: glide in from its edge and out (the scale-pop is added in
+ *     `scale`, not here).
+ *   - `hover`: stay at its band with a slow gentle sway (no edge glide); a
+ *     centre-unknown hover fades in place via opacity.
+ *
+ * A centre-unknown ghost always sits at its band (it fades in place via
+ * opacity — see `pointGhostOpacity`). Under reduced motion the ghost sits at
+ * its settled band with no glide or sway (Req 6.6).
+ */
+function pointX(event: SoundEvent, t: number, reducedMotion: boolean, cfg: GhostConfig): number {
   const settled = trackedX(event, t, reducedMotion);
-  if (reducedMotion || event.side === 'centre-unknown') return settled;
+  const motion = motionOf(event, cfg);
+
+  if (reducedMotion) return settled;
+
+  if (motion === 'hover') {
+    if (event.side === 'centre-unknown') return settled;
+    // A gentle, slow horizontal sway around the settled band.
+    const sway = Math.sin(2 * Math.PI * HOVER_SWAY_HZ * t) * HOVER_SWAY_X;
+    return settled + sway;
+  }
+
+  // cross with a measured side change follows the track across the frame.
+  if (motion === 'cross' && hasMeasuredSideChange(event)) return settled;
+
+  // cross without a change and edgeReact both glide in from the edge and out.
+  if (event.side === 'centre-unknown') return settled;
 
   const offscreen = OFFSCREEN_X[event.side];
   const span = event.end - event.start;
@@ -194,13 +263,18 @@ function pointX(event: SoundEvent, t: number, reducedMotion: boolean): number {
 }
 
 /**
- * Opacity for a centre-unknown point ghost: it fades in over the first
- * `ENTER_TIME` and out over the last `WITHDRAW_TIME`, since it has no edge to
- * glide from (task 16.4). Side ghosts stay fully opaque (their motion is the
- * glide). Under reduced motion opacity is 1 (fade is motion). Range 0..1.
+ * Opacity for a point ghost at the event edges (task 16.4, 17.3). A ghost that
+ * glides in from a screen edge (a side `cross`/`edgeReact` ghost) stays fully
+ * opaque — its motion is the glide. A ghost with no edge entrance fades in over
+ * the first `ENTER_TIME` and out over the last `WITHDRAW_TIME`: that is every
+ * `hover` ghost and every `centre-unknown` point ghost. Under reduced motion
+ * opacity is 1 (fade is motion). Range 0..1.
  */
-function pointGhostOpacity(event: SoundEvent, t: number, reducedMotion: boolean): number {
-  if (reducedMotion || event.side !== 'centre-unknown') return 1;
+function pointGhostOpacity(event: SoundEvent, t: number, reducedMotion: boolean, cfg: GhostConfig): number {
+  if (reducedMotion) return 1;
+  const motion = motionOf(event, cfg);
+  const gliding = motion !== 'hover' && event.side !== 'centre-unknown';
+  if (gliding) return 1;
   const span = event.end - event.start;
   const enter = Math.min(ENTER_TIME, span / 2);
   const withdraw = Math.min(WITHDRAW_TIME, span / 2);
@@ -210,13 +284,17 @@ function pointGhostOpacity(event: SoundEvent, t: number, reducedMotion: boolean)
 }
 
 /**
- * Scale from loudness and trend. Loudness sets the base size; a rising event
- * grows toward its end (approaching), a falling one shrinks (receding). Under
- * reduced motion the trend swing is dropped so the ghost does not move, but
- * the loudness size is kept (Req 6.2, 6.6).
+ * Scale from loudness and trend, in the narrow config band (task 17.1). The
+ * base diameter is applied in `layout`/`draw`; this returns the multiplier.
+ * Loudness sets the base size; a rising event grows toward its end
+ * (approaching), a falling one shrinks (receding). Under reduced motion the
+ * trend swing is dropped so the ghost does not move, but the loudness size is
+ * kept (Req 6.2, 6.6).
  */
-function scaleFor(event: SoundEvent, t: number, reducedMotion: boolean): number {
-  const base = MIN_LOUD_SCALE + event.loudness * (MAX_LOUD_SCALE - MIN_LOUD_SCALE);
+function scaleFor(event: SoundEvent, t: number, reducedMotion: boolean, cfg: GhostConfig): number {
+  const lo = cfg.loudScaleMin.value;
+  const hi = cfg.loudScaleMax.value;
+  const base = lo + event.loudness * (hi - lo);
   if (reducedMotion || event.trend === 'steady') return base;
 
   const span = event.end - event.start;
@@ -224,6 +302,23 @@ function scaleFor(event: SoundEvent, t: number, reducedMotion: boolean): number 
   const dir = event.trend === 'rising' ? 1 : -1;
   const swing = (progress - 0.5) * TREND_SCALE_SWING * dir;
   return base * (1 + swing);
+}
+
+/**
+ * A short one-pulse scale-pop for an `edgeReact` ghost just after it arrives
+ * (task 17.3): the scale swells by up to `EDGE_POP_AMOUNT` over the first
+ * `EDGE_POP_TIME` seconds, then settles. A single rise-and-fall, never a
+ * repeating flash (Req 10.3). Returns a multiplier ≥ 1. Dropped under reduced
+ * motion.
+ */
+function edgePop(event: SoundEvent, t: number, reducedMotion: boolean, cfg: GhostConfig): number {
+  if (reducedMotion) return 1;
+  if (motionOf(event, cfg) !== 'edgeReact') return 1;
+  const since = t - event.start;
+  if (since < 0 || since > EDGE_POP_TIME) return 1;
+  // One half-sine pulse: 0 at the ends, peak in the middle.
+  const pulse = Math.sin((since / EDGE_POP_TIME) * Math.PI);
+  return 1 + EDGE_POP_AMOUNT * pulse;
 }
 
 /**
@@ -275,9 +370,37 @@ export function layout(
       !settings.mutedFamilies.has(e.family),
   );
 
+  // One big ghost at a time (task 17.2): only the loudest drawable point event
+  // is full size; every other simultaneous point event becomes a small marker
+  // at MARKER_SCALE so large ghosts never pile up over faces. Ties break on the
+  // earlier array index for determinism (layout is pure).
+  let loudestIndex = -1;
+  let loudestLoud = -Infinity;
+  drawable.forEach((e, i) => {
+    if (e.loudness > loudestLoud) {
+      loudestLoud = e.loudness;
+      loudestIndex = i;
+    }
+  });
+
+  // The base radius fraction of the shorter viewport dimension: half the
+  // configured ghost diameter (task 17.1).
+  const baseRadius = baseRadiusFrac(cfg);
+
   drawable.forEach((event, i) => {
-    const scale = scaleFor(event, t, settings.reducedMotion) * settings.sizeScale;
-    const radiusFracH = minDim > 0 ? (BASE_RADIUS * scale * minDim) / viewport.height : 0;
+    const isBig = i === loudestIndex;
+    const markerFactor = isBig ? 1 : MARKER_SCALE;
+    const scale =
+      scaleFor(event, t, settings.reducedMotion, cfg) *
+      edgePop(event, t, settings.reducedMotion, cfg) *
+      settings.sizeScale *
+      markerFactor;
+
+    // Radius as a fraction of viewport height, so a tall ghost still clears the
+    // caption band regardless of aspect ratio.
+    const radiusFracH = minDim > 0 && viewport.height > 0
+      ? (baseRadius * scale * minDim) / viewport.height
+      : 0;
 
     const yMax = 1 - CAPTION_BAND - radiusFracH;
     const slots = Math.max(1, drawable.length);
@@ -285,12 +408,19 @@ export function layout(
     const yHigh = Math.max(Y_MIN, yMax);
     const y = clamp(Y_MIN + frac * (yHigh - Y_MIN), Y_MIN, yHigh);
 
-    const x = clamp(pointX(event, t, settings.reducedMotion), OFFSCREEN_X.left, OFFSCREEN_X.right);
+    const x = clamp(pointX(event, t, settings.reducedMotion, cfg), OFFSCREEN_X.left, OFFSCREEN_X.right);
 
     const trembleHz =
       settings.reducedMotion || event.beatPeriod == null || event.beatPeriod <= 0
         ? 0
         : clamp(1 / event.beatPeriod, 0, MAX_TREMBLE_HZ);
+
+    // Keep the central face region light (task 17.4): a full-size ghost's
+    // opacity drops to CENTRE_FACE_OPACITY while its centre sits in the central
+    // 40% of the frame. Markers are already small, so they keep their opacity.
+    const edgeOpacity = pointGhostOpacity(event, t, settings.reducedMotion, cfg);
+    const inFaceBand = x > 0.5 - CENTRE_FACE_BAND / 2 && x < 0.5 + CENTRE_FACE_BAND / 2;
+    const faceDim = isBig && inFaceBand ? CENTRE_FACE_OPACITY : 1;
 
     sprites.push({
       family: event.family,
@@ -299,7 +429,7 @@ export function layout(
       scale,
       fog: clamp(event.ominous, 0, 1),
       trembleHz,
-      opacity: pointGhostOpacity(event, t, settings.reducedMotion),
+      opacity: clamp01(edgeOpacity * faceDim),
       label: spriteLabel(event, s, settings.lang),
     });
   });

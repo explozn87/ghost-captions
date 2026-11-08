@@ -33,6 +33,34 @@ export function defaultSettings(lang: Lang, prefersReducedMotion: boolean): Sett
   };
 }
 
+/**
+ * The three ghost-size choices offered in Settings (task 17.1): small, normal
+ * and large map to 24% / 30% / 36% of the viewport's shorter side. The base
+ * ghost diameter is 30% (`ghostDiameterFrac`), so these are sizeScale
+ * multipliers 0.8 / 1.0 / 1.2.
+ */
+export type SizeChoice = 'small' | 'normal' | 'large';
+export const SIZE_SCALES: Record<SizeChoice, number> = {
+  small: 0.8, // 24% of the shorter side (0.8 × 30%)
+  normal: 1.0, // 30%
+  large: 1.2, // 36%
+};
+export const SIZE_CHOICES: SizeChoice[] = ['small', 'normal', 'large'];
+
+/** The size choice nearest a stored sizeScale, for showing the current option. */
+export function sizeChoiceFor(sizeScale: number): SizeChoice {
+  let best: SizeChoice = 'normal';
+  let bestDist = Infinity;
+  for (const choice of SIZE_CHOICES) {
+    const d = Math.abs(SIZE_SCALES[choice] - sizeScale);
+    if (d < bestDist) {
+      bestDist = d;
+      best = choice;
+    }
+  }
+  return best;
+}
+
 /** Derive the overlay's view of the settings (what `layout()` needs). */
 export function toOverlaySettings(settings: Settings): OverlaySettings {
   return {

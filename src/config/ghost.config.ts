@@ -55,7 +55,32 @@ export interface GhostConfig {
   edgeFogRelease: Tuned;
   /** Hard cap on edge-fog opacity so the centre stays clear (<= 0.45). */
   edgeFogMaxOpacity: Tuned;
+  /**
+   * Default ghost diameter as a fraction of the viewport's shorter side, before
+   * the loudness and size-control multipliers (task 17.1). Ghosts were too
+   * small to recognise, so a mid-loudness ghost is now a large fraction of the
+   * frame.
+   */
+  ghostDiameterFrac: Tuned;
+  /** Loudness maps scale down to this multiplier for the quietest sound (task 17.1). */
+  loudScaleMin: Tuned;
+  /** Loudness maps scale up to this multiplier for the loudest sound (task 17.1). */
+  loudScaleMax: Tuned;
+  /**
+   * How each point family moves (task 17.3). `cross` follows a measured side
+   * change across the frame (else glides in from its side); `edgeReact`
+   * appears at the source edge with a short scale-pop then withdraws; `hover`
+   * stays in the upper band with a slow gentle sway. Ambient families keep
+   * edge fog (task 16.3) and are not listed here.
+   */
+  motionByFamily: { value: Record<Family, MotionKind>; why: string };
 }
+
+/**
+ * How a point ghost moves over its lifetime (task 17.3). Ambient families are
+ * drawn as edge fog and never use these.
+ */
+export type MotionKind = 'cross' | 'edgeReact' | 'hover';
 
 export const ghostConfig = {
   labelThreshold: {
@@ -140,6 +165,46 @@ export const ghostConfig = {
   edgeFogMaxOpacity: {
     value: 0.45,
     why: 'Edge fog never exceeds 0.45 opacity and only touches the outer edges, so the central 60% of the frame is always clear and readable (Req 6.5, task 16.3).',
+  },
+  ghostDiameterFrac: {
+    value: 0.3,
+    why: 'A mid-loudness ghost is 30% of the viewport\'s shorter side (180 px at a 600 px side), replacing the old 0.08 radius that was too small to recognise (review by Elsa, task 17.1). This is a diameter, so the drawn radius is half of it.',
+  },
+  loudScaleMin: {
+    value: 0.85,
+    why: 'The quietest sound is still 0.85x the default diameter, not tiny: loudness still reads but a small ghost stays recognisable (task 17.1).',
+  },
+  loudScaleMax: {
+    value: 1.15,
+    why: 'The loudest sound is 1.15x the default diameter: a narrow 0.85–1.15 band so loudness is visible without a loud ghost swamping the frame (task 17.1).',
+  },
+  motionByFamily: {
+    value: {
+      vehicle: 'cross',
+      footsteps: 'cross',
+      gunshot: 'edgeReact',
+      impact: 'edgeReact',
+      knock: 'edgeReact',
+      door: 'edgeReact',
+      glass: 'edgeReact',
+      scream: 'edgeReact',
+      singing: 'hover',
+      laughter: 'hover',
+      crying: 'hover',
+      siren: 'hover',
+      animal: 'hover',
+      fire: 'hover',
+      unknown: 'hover',
+      // Ambient families (edge fog, task 16.3). Listed to keep the record total
+      // over Family; the overlay never reads them because ambient events are
+      // drawn as fog, not ghosts.
+      wind: 'hover',
+      rain: 'hover',
+      thunder: 'hover',
+      tenseMusic: 'hover',
+      calmMusic: 'hover',
+    },
+    why: 'Motion matches how each sound behaves (task 17.3): vehicles and footsteps CROSS the frame when a side change is measured (they travel through the scene); gunshot/impact/knock/door/glass/scream are sharp point events that EDGE-REACT with one scale-pop at the source edge then withdraw; singing/laughter/crying/siren/animal/fire/unknown HOVER with a slow sway as they have no single arrival. Ambient families are drawn as edge fog and never read this table.',
   },
 } satisfies GhostConfig;
 

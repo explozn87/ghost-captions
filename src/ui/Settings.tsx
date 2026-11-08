@@ -11,7 +11,7 @@ import type { Family } from '../shared/types.ts';
 import type { Lang, Strings } from '../i18n/index.ts';
 import { LANGS, tables } from '../i18n/index.ts';
 import type { Settings as SettingsState } from './settings.ts';
-import { toggleMuted } from './settings.ts';
+import { toggleMuted, SIZE_CHOICES, SIZE_SCALES, sizeChoiceFor, type SizeChoice } from './settings.ts';
 
 /** The ghost families offered as mute toggles, in a stable display order. */
 const FAMILIES: Family[] = [
@@ -36,6 +36,13 @@ const FAMILIES: Family[] = [
   'glass',
   'unknown',
 ];
+
+/** Label resolver for each size choice, read from the i18n ui table (task 17.1). */
+const SIZE_LABEL: Record<SizeChoice, (ui: Strings['ui']) => string> = {
+  small: (ui) => ui.sizeSmall,
+  normal: (ui) => ui.sizeNormal,
+  large: (ui) => ui.sizeLarge,
+};
 
 export interface SettingsPanelProps {
   strings: Strings;
@@ -79,14 +86,18 @@ export function SettingsPanel({
 
       <label className="settings__row">
         <span>{ui.ghostSize}</span>
-        <input
-          type="range"
-          min={0.5}
-          max={2}
-          step={0.1}
-          value={settings.sizeScale}
-          onChange={(e) => onChange({ ...settings, sizeScale: Number(e.target.value) })}
-        />
+        <select
+          value={sizeChoiceFor(settings.sizeScale)}
+          onChange={(e) =>
+            onChange({ ...settings, sizeScale: SIZE_SCALES[e.target.value as SizeChoice] })
+          }
+        >
+          {SIZE_CHOICES.map((choice) => (
+            <option key={choice} value={choice}>
+              {SIZE_LABEL[choice](ui)}
+            </option>
+          ))}
+        </select>
       </label>
 
       <fieldset className="settings__families">

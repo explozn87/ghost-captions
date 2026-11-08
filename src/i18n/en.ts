@@ -89,6 +89,9 @@ export const en: Strings = {
     aboutGhosts: 'About the ghosts',
     reducedMotion: 'Reduced motion',
     ghostSize: 'Ghost size',
+    sizeSmall: 'Small',
+    sizeNormal: 'Normal',
+    sizeLarge: 'Large',
     muteFamily: 'Mute this sound',
     language: 'Language',
 

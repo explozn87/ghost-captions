@@ -5,7 +5,11 @@ import {
   edgeFogs,
   fogDecayDuration,
   spriteLabel,
+  baseRadiusFrac,
   CAPTION_BAND,
+  CENTRE_FACE_BAND,
+  CENTRE_FACE_OPACITY,
+  MARKER_SCALE,
   MAX_TREMBLE_HZ,
   type Viewport,
   type OverlaySettings,
@@ -60,7 +64,9 @@ const defaultSettings: OverlaySettings = {
   mutedFamilies: new Set<Family>(),
 };
 
-const BASE_RADIUS = 0.08; // must match layout's BASE_RADIUS
+// Half the configured ghost diameter (0.30), so a base radius fraction of 0.15
+// (task 17.1), replacing the old 0.08. Must match layout's baseRadiusFrac().
+const BASE_RADIUS = ghostConfig.ghostDiameterFrac.value / 2;
 
 describe('layout: property P6 — never in the caption band (task 8.1)', () => {
   it('no sprite (centre plus its drawn radius) reaches the bottom caption band', () => {
@@ -351,7 +357,10 @@ describe('layout: point ghosts enter from the edge and withdraw (task 16.4)', ()
     expect(fadingIn.x).toBeGreaterThanOrEqual(0.4);
     expect(fadingIn.x).toBeLessThanOrEqual(0.6);
     expect(fadingIn.opacity).toBeLessThan(settled.opacity);
-    expect(settled.opacity).toBeCloseTo(1, 5);
+    // Once settled it reaches its steady opacity. As the only (loudest) event
+    // it is full size and centred in the face band, so task 17.4 dims it to
+    // CENTRE_FACE_OPACITY rather than full 1.
+    expect(settled.opacity).toBeCloseTo(CENTRE_FACE_OPACITY, 5);
   });
 
   it('reduced motion skips the glide: a side ghost sits in its band from the start', () => {
@@ -359,6 +368,143 @@ describe('layout: point ghosts enter from the edge and withdraw (task 16.4)', ()
     const sp = layout([ev], 0.01, vp, { ...defaultSettings, reducedMotion: true })[0]!;
     expect(sp.x).toBeGreaterThanOrEqual(0.15);
     expect(sp.x).toBeLessThanOrEqual(0.3);
+    expect(sp.opacity).toBeCloseTo(1, 5);
+  });
+});
+
+describe('layout: bigger ghosts sized from config (task 17.1)', () => {
+  const vp: Viewport = { width: 1000, height: 1000 };
+
+  it('baseRadiusFrac is half the configured ghost diameter (30% → 0.15 radius)', () => {
+    expect(baseRadiusFrac()).toBeCloseTo(ghostConfig.ghostDiameterFrac.value / 2, 10);
+    expect(ghostConfig.ghostDiameterFrac.value).toBe(0.3);
+  });
+
+  it('a mid-loudness lone ghost is close to the default diameter on screen', () => {
+    // loudness 0.5 sits mid-band in the narrow 0.85..1.15 loud range → ~1.0.
+    const sp = layout([makeEvent({ family: 'footsteps', loudness: 0.5, trend: 'steady' })], 1, vp, defaultSettings)[0]!;
+    // Drawn radius fraction ≈ baseRadiusFrac × scale (minDim == height here).
+    const radiusFrac = baseRadiusFrac() * sp.scale;
+    // Diameter ≈ 30% of the shorter side, give or take the loud-range midpoint.
+    expect(radiusFrac * 2).toBeGreaterThan(0.25);
+    expect(radiusFrac * 2).toBeLessThan(0.35);
+  });
+
+  it('the loudness multiplier stays in the narrow config band', () => {
+    const quiet = layout([makeEvent({ loudness: 0, trend: 'steady' })], 0, vp, defaultSettings)[0]!;
+    const loud = layout([makeEvent({ loudness: 1, trend: 'steady' })], 0, vp, defaultSettings)[0]!;
+    expect(quiet.scale).toBeCloseTo(ghostConfig.loudScaleMin.value, 5);
+    expect(loud.scale).toBeCloseTo(ghostConfig.loudScaleMax.value, 5);
+  });
+});
+
+describe('layout: one big ghost at a time, others are markers (task 17.2)', () => {
+  const vp: Viewport = { width: 1000, height: 1000 };
+
+  it('only the loudest simultaneous point event is full size; the rest are small markers', () => {
+    const loud = makeEvent({ id: 'loud', family: 'footsteps', side: 'centre-unknown', loudness: 0.9, trend: 'steady' });
+    const soft1 = makeEvent({ id: 's1', family: 'door', side: 'centre-unknown', loudness: 0.4, trend: 'steady' });
+    const soft2 = makeEvent({ id: 's2', family: 'glass', side: 'centre-unknown', loudness: 0.2, trend: 'steady' });
+    const sprites = layout([loud, soft1, soft2], 1, vp, defaultSettings);
+    const byFamily = new Map(sprites.map((s) => [s.family, s]));
+    const big = byFamily.get('footsteps')!;
+    const m1 = byFamily.get('door')!;
+    const m2 = byFamily.get('glass')!;
+    // The two softer ghosts are ~MARKER_SCALE of their own full size.
+    expect(m1.scale).toBeLessThan(big.scale);
+    expect(m2.scale).toBeLessThan(big.scale);
+    // A marker is about MARKER_SCALE of what it would be at full size: compare
+    // to the same soft event drawn alone (where it is the loudest = big).
+    const soloSoft1 = layout([soft1], 1, vp, defaultSettings)[0]!;
+    expect(m1.scale).toBeCloseTo(soloSoft1.scale * MARKER_SCALE, 5);
+  });
+
+  it('every event still carries its label, markers included', () => {
+    const a = makeEvent({ id: 'a', family: 'footsteps', loudness: 0.9, side: 'centre-unknown' });
+    const b = makeEvent({ id: 'b', family: 'siren', loudness: 0.3, side: 'centre-unknown' });
+    const sprites = layout([a, b], 1, vp, defaultSettings);
+    for (const sp of sprites) expect(sp.label.length).toBeGreaterThan(0);
+  });
+});
+
+describe('layout: motion by family (task 17.3)', () => {
+  const vp: Viewport = { width: 1000, height: 1000 };
+
+  it('cross: a vehicle with a measured left→right track travels across, not off the edge', () => {
+    const ev = makeEvent({
+      family: 'vehicle',
+      side: 'right',
+      start: 0,
+      end: 4,
+      loudness: 0.8,
+      sideTrack: [
+        { t: 0, side: 'left' },
+        { t: 4, side: 'right' },
+      ],
+    });
+    const early = layout([ev], 0.5, vp, defaultSettings)[0]!;
+    const late = layout([ev], 3.5, vp, defaultSettings)[0]!;
+    // Follows the track between the bands; never slides off-screen (< 0 or > 1).
+    expect(early.x).toBeGreaterThanOrEqual(0.15);
+    expect(late.x).toBeLessThanOrEqual(0.85);
+    expect(late.x).toBeGreaterThan(early.x);
+  });
+
+  it('cross without a measured side change glides in from its edge', () => {
+    const ev = makeEvent({ family: 'vehicle', side: 'left', start: 0, end: 3, loudness: 0.8 });
+    const entering = layout([ev], 0.01, vp, defaultSettings)[0]!;
+    expect(entering.x).toBeLessThan(0.15); // off the left edge, gliding in
+  });
+
+  it('edgeReact: a gunshot pops in scale once near its start, then settles', () => {
+    const ev = makeEvent({ family: 'gunshot', side: 'left', start: 0, end: 3, loudness: 0.9, trend: 'steady' });
+    const mid = layout([ev], 0.15, vp, defaultSettings)[0]!; // peak of the pop
+    const settled = layout([ev], 1.5, vp, defaultSettings)[0]!; // after the pop
+    expect(mid.scale).toBeGreaterThan(settled.scale);
+  });
+
+  it('hover: a singing ghost sways gently around its band over time', () => {
+    const ev = makeEvent({ family: 'singing', side: 'left', start: 0, end: 10, loudness: 0.8 });
+    const a = layout([ev], 2, vp, defaultSettings)[0]!;
+    const b = layout([ev], 4.5, vp, defaultSettings)[0]!;
+    // Position moves a little between frames (the sway) but stays in the band.
+    expect(a.x).not.toBeCloseTo(b.x, 4);
+    for (const sp of [a, b]) {
+      expect(sp.x).toBeGreaterThanOrEqual(0.15);
+      expect(sp.x).toBeLessThanOrEqual(0.3);
+    }
+  });
+
+  it('reduced motion removes travel, pop and sway, keeping positions and sizes', () => {
+    const reduced: OverlaySettings = { ...defaultSettings, reducedMotion: true };
+    const gun = makeEvent({ family: 'gunshot', side: 'left', start: 0, end: 3, loudness: 0.9, trend: 'steady' });
+    const popMid = layout([gun], 0.15, vp, reduced)[0]!;
+    const popLate = layout([gun], 1.5, vp, reduced)[0]!;
+    expect(popMid.scale).toBeCloseTo(popLate.scale, 6); // no pop
+
+    const sing = makeEvent({ family: 'singing', side: 'left', start: 0, end: 10, loudness: 0.8 });
+    const swayA = layout([sing], 2, vp, reduced)[0]!;
+    const swayB = layout([sing], 4.5, vp, reduced)[0]!;
+    expect(swayA.x).toBeCloseTo(swayB.x, 6); // no sway
+  });
+});
+
+describe('layout: keep the central face region light (task 17.4)', () => {
+  const vp: Viewport = { width: 1000, height: 1000 };
+
+  it('a full-size ghost dims to the configured opacity while centred in the face band', () => {
+    // A centre-unknown hover ghost sits at x = 0.5, inside the central 40%.
+    const ev = makeEvent({ family: 'siren', side: 'centre-unknown', start: 0, end: 10, loudness: 0.9 });
+    const sp = layout([ev], 5, vp, defaultSettings)[0]!; // well past the fade-in
+    expect(sp.x).toBeGreaterThan(0.5 - CENTRE_FACE_BAND / 2);
+    expect(sp.x).toBeLessThan(0.5 + CENTRE_FACE_BAND / 2);
+    expect(sp.opacity).toBeCloseTo(CENTRE_FACE_OPACITY, 5);
+  });
+
+  it('a ghost out at the side keeps full opacity', () => {
+    const ev = makeEvent({ family: 'footsteps', side: 'left', start: 0, end: 10, loudness: 0.9 });
+    const sp = layout([ev], 5, vp, defaultSettings)[0]!; // settled in the left band
+    expect(sp.x).toBeLessThan(0.5 - CENTRE_FACE_BAND / 2);
     expect(sp.opacity).toBeCloseTo(1, 5);
   });
 });

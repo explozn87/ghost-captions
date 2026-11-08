@@ -85,6 +85,10 @@ export interface Strings {
     aboutGhosts: string;
     reducedMotion: string;
     ghostSize: string;
+    /** Ghost-size options: small/normal/large (24/30/36%) (task 17.1). */
+    sizeSmall: string;
+    sizeNormal: string;
+    sizeLarge: string;
     muteFamily: string;
     language: string;
 

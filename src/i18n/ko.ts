@@ -88,6 +88,9 @@ export const ko: Strings = {
     aboutGhosts: '유령에 대하여',
     reducedMotion: '모션 줄이기',
     ghostSize: '유령 크기',
+    sizeSmall: '작게',
+    sizeNormal: '보통',
+    sizeLarge: '크게',
     muteFamily: '이 소리 숨기기',
     language: '언어',
 
