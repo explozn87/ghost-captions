@@ -69,7 +69,7 @@ export interface DemoClip {
 export const DEMO_CLIPS: readonly DemoClip[] = [
   {
     id: 'sintel-trailer',
-    title: 'Sintel (trailer)',
+    title: 'Sintel (trailer, first 25 s only)',
     author: 'Blender Foundation',
     licence: 'CC-BY-3',
     sourceUrl: 'https://durian.blender.org/',
