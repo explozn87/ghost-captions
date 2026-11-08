@@ -95,3 +95,15 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
     - _Requirements: 3.1, 3.5, 6.4, 7.2, 8.1, 8.2_
   - [x] 15.2 Add `src/i18n/soundLabels.ko.ts`: a natural Korean name for every `display_name` in `test/fixtures/yamnet_class_map.csv` (521 entries; short everyday words a viewer would say, e.g. "Wind" → "바람", "Wind noise (microphone)" → "마이크 바람 소리", "Artillery fire" → "포격"). English uses the display_name as is. Test: every class-map name has a non-empty Korean entry, and the Sintel fixture events show "바람"/"Wind" where the top label is Wind.
     - _Requirements: 9.1, 9.2_
+
+- [ ] 16. Twenty ghost families, edge fog, sprite art (feedback from browser check, 2026-11-08)
+  - [ ] 16.1 Replace the 12 families with 20: `footsteps, door, knock, scream, laughter, crying, tenseMusic, calmMusic, singing, impact, gunshot, vehicle, siren, animal, wind, rain, thunder, fire, glass, unknown`. Update `Family`, `familyMap.ts` (every class-map name still mapped; e.g. Wind/Rustling leaves → wind, Rain/Raindrop/Water → rain, Thunder/Thunderstorm → thunder, Fire/Crackle → fire, Knock/Tap → knock, Door/Slam/Squeak → door, Screaming/Shout/Yell → scream, Laughter → laughter, Crying/Sobbing/Whimper → crying, Choir/Singing/Vocal music → singing, Gunshot/Machine gun/Artillery fire → gunshot, Explosion/Boom/Bang/Thump → impact, Siren/Alarm/Bell/Buzzer → siren), priors in `ghost.config.ts` (each with `why`), i18n family names, and all tests.
+    - _Requirements: 3.1, 5.2, 9.1_
+  - [ ] 16.2 Merged-event label: an event's `topLabel` is the single highest-scoring category across all windows merged into it (not the last or first window).
+    - _Requirements: 3.3, 6.4_
+  - [ ] 16.3 Ambient vs. point families in config: `wind, rain, thunder, tenseMusic, calmMusic` are **ambient**; all others are **point**. Ambient events are drawn as edge fog (a vignette from the screen edges), not as a ghost: whole-frame edges when side is `centre-unknown`, only that side's edge when side is known. Fog strength follows loudness and ominousness, rises only when the event starts or its loudness rises, then decays slowly (config: `edgeFogAttack`, `edgeFogRelease`, `edgeFogMaxOpacity` ≤ 0.45); the central 60 % of the frame is never covered. Thunder is a single slow edge pulse, never a white flash (Req 10.3). The text label of an ambient event is shown near that edge on a backing plate.
+    - _Requirements: 4.4, 5.1, 6.2, 6.4, 10.3_
+  - [ ] 16.4 Point ghosts with a known side enter from that screen edge (emerging from the fog band) and withdraw back out when the event ends; `centre-unknown` point ghosts fade in place in the upper area, never covering the centre-bottom caption band.
+    - _Requirements: 4.4, 6.2, 6.5_
+  - [ ] 16.5 Sprite art: `draw()` paints `public/ghosts/<family>.png` (512×512, transparent) scaled to the sprite size, with the configured opacity; it preloads all images once and falls back to the existing Path2D silhouette for any image that is missing or not yet loaded. Reduced motion keeps the same images without drift/tremble. Tests cover the fallback path with a fake image loader.
+    - _Requirements: 6.3, 6.6_
