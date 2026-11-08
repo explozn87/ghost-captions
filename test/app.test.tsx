@@ -77,9 +77,11 @@ describe('app shell end to end (fake classifier)', () => {
     // Header row + at least the footsteps and impact events.
     expect(rows.length).toBeGreaterThanOrEqual(3);
 
-    // The two scripted families appear as text (ghosts carry text labels).
-    expect(screen.getAllByText('footsteps').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('impact').length).toBeGreaterThan(0);
+    // The two scripted sounds appear as their specific classifier labels
+    // (task 15.1): the score is well above the specific-label threshold, so
+    // the list shows "Walk, footsteps" and "Explosion", not the family words.
+    expect(screen.getAllByText('Walk, footsteps').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Explosion').length).toBeGreaterThan(0);
 
     // Direction is measured from the hard-panned bursts: left then right.
     expect(screen.getAllByText('from the left').length).toBeGreaterThan(0);
@@ -111,7 +113,7 @@ describe('app shell end to end (fake classifier)', () => {
     expect(capturedText).not.toBeNull();
     const text = capturedText as unknown as string;
     expect(text.startsWith('WEBVTT')).toBe(true);
-    expect(text).toContain('[footsteps, from the left]');
+    expect(text).toContain('[Walk, footsteps, from the left]');
     expect(text).toContain('-->');
   });
 

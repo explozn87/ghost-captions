@@ -20,6 +20,7 @@
 
 import type { EventTrack } from '../shared/types.ts';
 import { tables, type Lang as I18nLang, type Strings } from '../i18n/index.ts';
+import { soundNoun } from '../i18n/soundLabel.ts';
 
 /** The languages the export supports, English default (Requirement 9.1). */
 export type Lang = I18nLang;
@@ -55,22 +56,25 @@ export function formatTimestamp(seconds: number): string {
 
 /**
  * Build the text inside one cue's brackets, e.g. `footsteps, from the left,
- * getting louder`. Only the known parts are included: a direction phrase
- * appears solely for a known side (Req 8.2) and a trend phrase solely when the
- * loudness clearly rose or fell (Req 5.4).
+ * getting louder`. The noun is the specific classifier label when confident,
+ * else the family word (`soundNoun`, task 15.1); an `unknown` event is never
+ * named with a guessed label. Only the known parts are included: a direction
+ * phrase appears solely for a known side (Req 8.2) and a trend phrase solely
+ * when the loudness clearly rose or fell (Req 5.4).
  */
 function cueText(
   event: EventTrack['events'][number],
-  p: Phrases,
+  s: Strings,
+  lang: Lang,
 ): string {
-  const parts: string[] = [p.family[event.family]];
+  const parts: string[] = [soundNoun(event, s, lang)];
   if (event.side === 'left' || event.side === 'right') {
-    parts.push(p.side[event.side]);
+    parts.push(s.side[event.side]);
   }
   if (event.trend === 'rising' || event.trend === 'falling') {
-    parts.push(p.trend[event.trend]);
+    parts.push(s.trend[event.trend]);
   }
-  return `[${parts.join(p.join)}]`;
+  return `[${parts.join(s.join)}]`;
 }
 
 /**
@@ -82,7 +86,7 @@ function cueText(
  * is a plain string; the caller turns it into a download (Requirement 8.4).
  */
 export function toWebVtt(track: EventTrack, lang: Lang): string {
-  const p = phrases[lang];
+  const s = tables[lang] ?? tables.en;
   const blocks: string[] = ['WEBVTT'];
 
   // Keep the original event order; events are already sorted by start time in
@@ -94,7 +98,7 @@ export function toWebVtt(track: EventTrack, lang: Lang): string {
     index += 1;
     const start = formatTimestamp(event.start);
     const end = formatTimestamp(Math.max(event.end, event.start));
-    blocks.push(`${index}\n${start} --> ${end}\n${cueText(event, p)}`);
+    blocks.push(`${index}\n${start} --> ${end}\n${cueText(event, s, lang)}`);
   }
 
   // A trailing newline keeps the file POSIX-friendly and matches how most

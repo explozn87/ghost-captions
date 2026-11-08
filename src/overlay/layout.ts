@@ -29,6 +29,7 @@
 
 import type { GhostSprite, Side, SoundEvent } from '../shared/types.ts';
 import { tables, type Lang, type Strings } from '../i18n/index.ts';
+import { soundNoun } from '../i18n/soundLabel.ts';
 
 /** The drawable area the overlay covers, in CSS pixels. */
 export interface Viewport {
@@ -150,13 +151,16 @@ function scaleFor(event: SoundEvent, t: number, reducedMotion: boolean): number 
 }
 
 /**
- * Build the label text for a sprite from the i18n phrases: family name, plus a
- * direction word only for a known side, plus a trend word when the loudness
- * clearly rose or fell (Req 6.4). Uses the same tables as the caption export
- * so overlay and export never disagree (Req 9.2).
+ * Build the label text for a sprite from the i18n phrases: the sound noun
+ * (the specific classifier label when confident, else the family word — see
+ * `soundNoun`, task 15.1), plus a direction word only for a known side, plus a
+ * trend word when the loudness clearly rose or fell (Req 6.4). Uses the same
+ * tables and resolver as the caption export so overlay and export never
+ * disagree (Req 9.2). `lang` defaults to English so callers holding only a
+ * `Strings` table keep working.
  */
-export function spriteLabel(event: SoundEvent, s: Strings): string {
-  const parts: string[] = [s.family[event.family]];
+export function spriteLabel(event: SoundEvent, s: Strings, lang: Lang = 'en'): string {
+  const parts: string[] = [soundNoun(event, s, lang)];
   if (event.side === 'left' || event.side === 'right') {
     parts.push(s.side[event.side]);
   }
@@ -221,7 +225,7 @@ export function layout(
       fog: clamp(event.ominous, 0, 1),
       trembleHz,
       opacity: 1,
-      label: spriteLabel(event, s),
+      label: spriteLabel(event, s, settings.lang),
     });
   });
 

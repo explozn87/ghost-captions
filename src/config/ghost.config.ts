@@ -32,6 +32,7 @@ export interface OminousWeights {
 
 export interface GhostConfig {
   labelThreshold: Tuned;
+  specificLabelThreshold: Tuned;
   mergeGap: Tuned;
   minDuration: Tuned;
   onsetKeepPercentile: Tuned;
@@ -48,6 +49,10 @@ export const ghostConfig = {
   labelThreshold: {
     value: 0.3,
     why: 'Best category score must reach 0.3 to assign a family; below it the sound is shown as unknown rather than a guessed label (Req 3.5). Matches the 11-08 run where real cues sat at 0.3+ and noise below.',
+  },
+  specificLabelThreshold: {
+    value: 0.3,
+    why: 'The specific classifier label (e.g. "Wind", "Thunder") is shown in the ghost label, event list, timeline tooltip and WebVTT cue only when its score reaches 0.3; below it the label falls back to the broader family name. Set equal to labelThreshold so a window that was confident enough to earn a family is also confident enough to name the specific sound, while never naming an unknown event (task 15.1).',
   },
   mergeGap: {
     value: 0.5,

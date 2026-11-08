@@ -41,7 +41,7 @@ export function Timeline({
         {track.events.map((event, i) => {
           if (event.isSpeech) return null;
           const leftPct = (event.start / duration) * 100;
-          const label = spriteLabel(event, s);
+          const label = spriteLabel(event, s, lang);
           return (
             <li
               key={event.id}

@@ -14,12 +14,14 @@
 // family (Req 3.2), so the list still accounts for the whole soundtrack.
 
 import type { EventTrack, SoundEvent } from '../shared/types.ts';
-import type { Strings } from '../i18n/index.ts';
+import type { Lang, Strings } from '../i18n/index.ts';
+import { soundNoun } from '../i18n/soundLabel.ts';
 import { loudnessBand, ominousBand, formatClock } from './settings.ts';
 
 export interface EventListProps {
   track: EventTrack;
   strings: Strings;
+  lang: Lang;
   currentIndex: number;
   onSeek: (seconds: number) => void;
 }
@@ -27,6 +29,7 @@ export interface EventListProps {
 export function EventList({
   track,
   strings,
+  lang,
   currentIndex,
   onSeek,
 }: EventListProps): JSX.Element {
@@ -36,7 +39,7 @@ export function EventList({
   return (
     <section className="eventlist" aria-label={ui.eventList}>
       <p className="sr-only" aria-live="polite">
-        {current ? describe(current, strings) : ''}
+        {current ? describe(current, strings, lang) : ''}
       </p>
       <table className="eventlist__table">
         <thead>
@@ -60,12 +63,12 @@ export function EventList({
                   type="button"
                   className="eventlist__seek"
                   onClick={() => onSeek(event.start)}
-                  aria-label={`${formatClock(event.start)} ${soundName(event, strings)}`}
+                  aria-label={`${formatClock(event.start)} ${soundName(event, strings, lang)}`}
                 >
                   {formatClock(event.start)}
                 </button>
               </td>
-              <td>{soundName(event, strings)}</td>
+              <td>{soundName(event, strings, lang)}</td>
               <td>{directionWord(event, strings)}</td>
               <td>{event.isSpeech ? '—' : strings.loudness[loudnessBand(event.loudness)]}</td>
               <td>{event.isSpeech ? '—' : strings.ominous[ominousBand(event.ominous)]}</td>
@@ -77,9 +80,13 @@ export function EventList({
   );
 }
 
-/** The sound's name: the family word, or the speech marker for speech. */
-function soundName(event: SoundEvent, strings: Strings): string {
-  return event.isSpeech ? strings.ui.speechMarker : strings.family[event.family];
+/**
+ * The sound's name: the speech marker for speech, otherwise the specific
+ * classifier label when confident, else the family word (`soundNoun`, task
+ * 15.1).
+ */
+function soundName(event: SoundEvent, strings: Strings, lang: Lang): string {
+  return event.isSpeech ? strings.ui.speechMarker : soundNoun(event, strings, lang);
 }
 
 /** The direction word only for a known side; otherwise a dash (Req 4.4). */
@@ -89,8 +96,8 @@ function directionWord(event: SoundEvent, strings: Strings): string {
 }
 
 /** A full spoken-form description for the aria-live current-event announcement. */
-function describe(event: SoundEvent, strings: Strings): string {
-  const parts: string[] = [soundName(event, strings)];
+function describe(event: SoundEvent, strings: Strings, lang: Lang): string {
+  const parts: string[] = [soundName(event, strings, lang)];
   if (event.side === 'left' || event.side === 'right') parts.push(strings.side[event.side]);
   if (!event.isSpeech) {
     parts.push(strings.loudness[loudnessBand(event.loudness)]);

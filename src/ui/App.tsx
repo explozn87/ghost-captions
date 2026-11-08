@@ -242,6 +242,7 @@ function WatchScreen({
       <EventList
         track={track}
         strings={strings}
+        lang={settings.lang}
         currentIndex={currentIndex}
         onSeek={seek}
       />
