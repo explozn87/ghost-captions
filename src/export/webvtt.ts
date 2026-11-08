@@ -18,9 +18,15 @@
 // on the four fields it needs (family/side/trend/join) and the public API
 // (`phrases`, `Lang`) stays stable.
 
-import type { DialogueCue, EventTrack } from '../shared/types.ts';
+import type { DialogueCue, EventTrack, Family } from '../shared/types.ts';
 import { tables, type Lang as I18nLang, type Strings } from '../i18n/index.ts';
-import { soundNoun } from '../i18n/soundLabel.ts';
+import { occurrenceNoun, soundNoun } from '../i18n/soundLabel.ts';
+import {
+  occurrences,
+  occurrenceShownEnd,
+  type Occurrence,
+} from '../events/occurrences.ts';
+import { ghostConfig, type GhostConfig } from '../config/ghost.config.ts';
 
 /** The languages the export supports, English default (Requirement 9.1). */
 export type Lang = I18nLang;
@@ -149,5 +155,103 @@ export function toWebVtt(
 
   // A trailing newline keeps the file POSIX-friendly and matches how most
   // WebVTT writers emit the last cue.
+  return blocks.join('\n\n') + '\n';
+}
+
+
+/**
+ * Render the SHOWN sound occurrences as a WebVTT file so the download says
+ * exactly what the screen said (task 33.1).
+ *
+ * The old `toWebVtt` iterates every raw event over the whole file. On a trimmed
+ * demo (one with an `endAt`, task 25.6) that gave a .vtt covering the full clip
+ * — music past the trim point, a different number of cues than the end card's
+ * evidence list. This builder uses the SAME source the end card uses:
+ *
+ *   - `occurrences(track.events, settings)` folds the shown events into one cue
+ *     per perceived sound (so music is not split into three), with the same
+ *     `isShownEvent` filter (no speech, no hidden family);
+ *   - when the clip has an `endAt`, only occurrences that START before it are
+ *     exported, and each cue ends at `occurrenceShownEnd(occ, effectiveEnd)` so
+ *     a span running past the trim point ends at the trim point — exactly as
+ *     the evidence row's listed span does;
+ *   - each cue's bracketed text is `occurrenceNoun(occ, …)` — the family label
+ *     plus the direction phrase when the side is known — the identical phrase
+ *     the end-card row prints, in the requested language (Req 8.3). An unknown
+ *     occurrence is never given a guessed label (Req 8.2); its family word is
+ *     used, as on screen.
+ *
+ * Dialogue cues (task 19.4) are merged in time order as before, but clipped to
+ * the effective end too (`endAt` with no dialogue after the trim point). A cue
+ * whose own span starts at or after the effective end is dropped; one that
+ * overruns it is clamped, so the exported file and a trimmed demo agree.
+ *
+ * With no `endAt` the export covers the whole file as before (the effective end
+ * is the track duration), still built from the shown occurrences rather than
+ * raw events. Pure: no DOM or Blob work (NFR-5); the caller downloads it.
+ */
+export function toWebVttFromOccurrences(
+  track: EventTrack,
+  lang: Lang,
+  options: {
+    settings: { mutedFamilies: ReadonlySet<Family> };
+    /** Short-demo end point (task 25.6); omit for a user file (whole clip). */
+    endAt?: number | undefined;
+    /** Dialogue cues to merge, verbatim (task 19.4). */
+    dialogue?: readonly DialogueCue[];
+    cfg?: GhostConfig;
+  },
+): string {
+  const s = tables[lang] ?? tables.en;
+  const cfg = options.cfg ?? ghostConfig;
+  const dialogue = options.dialogue ?? [];
+  // The effective end mirrors the Player (task 25.6): a short demo ends at its
+  // `endAt`, capped to the real duration; a user file runs to the full length.
+  const effectiveEnd =
+    options.endAt != null ? Math.min(options.endAt, track.duration) : track.duration;
+
+  interface Row { start: number; end: number; text: string; kind: 0 | 1; seq: number }
+  const rows: Row[] = [];
+
+  // Sound cues: one per shown occurrence that STARTS before the effective end,
+  // ending where the occurrence is last shown (task 29.4 / 33.1), labelled with
+  // the end-card phrase.
+  const occs: Occurrence[] = occurrences(track.events, options.settings, cfg).filter(
+    (occ) => occ.start < effectiveEnd,
+  );
+  for (const occ of occs) {
+    const end = occurrenceShownEnd(occ, effectiveEnd);
+    rows.push({
+      start: occ.start,
+      end: Math.max(end, occ.start),
+      text: `[${occurrenceNoun(occ, s, lang, cfg)}]`,
+      kind: 0,
+      seq: rows.length,
+    });
+  }
+
+  // Dialogue cues, clipped to the effective end (task 33.1): a cue starting at
+  // or after the trim point is dropped, one overrunning it is clamped.
+  for (const cue of dialogue) {
+    if (cue.start >= effectiveEnd) continue;
+    rows.push({
+      start: cue.start,
+      end: Math.min(Math.max(cue.end, cue.start), effectiveEnd),
+      text: cue.text,
+      kind: 1,
+      seq: rows.length,
+    });
+  }
+
+  rows.sort((a, b) => a.start - b.start || a.kind - b.kind || a.seq - b.seq);
+
+  const blocks: string[] = ['WEBVTT'];
+  let index = 0;
+  for (const row of rows) {
+    index += 1;
+    const start = formatTimestamp(row.start);
+    const end = formatTimestamp(row.end);
+    blocks.push(`${index}\n${start} --> ${end}\n${row.text}`);
+  }
   return blocks.join('\n\n') + '\n';
 }

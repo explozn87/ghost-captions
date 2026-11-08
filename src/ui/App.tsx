@@ -295,6 +295,8 @@ function WatchScreen({
           dialogue={dialogue}
           lang={settings.lang}
           strings={strings}
+          mutedFamilies={settings.mutedFamilies}
+          endAt={credit?.endAt}
         />
         <button
           type="button"
