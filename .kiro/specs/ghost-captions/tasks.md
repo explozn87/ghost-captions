@@ -24,10 +24,10 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
   - [x] 3.2 Convert the recorded raw output `test/fixtures/sintel.windows.txt` into `test/fixtures/sintel.windows.json` (`ClassWindow[]`, end = start + 0.975) (category names and scores only, no audio).
     - _Requirements: 3.1_
 
-- [ ] 4. Measurement (pure)
-  - [ ] 4.1 FFT, `frames()` with band energy, balance, flux, lowShare; chunked runner that yields between slices.
+- [x] 4. Measurement (pure)
+  - [x] 4.1 FFT, `frames()` with band energy, balance, flux, lowShare; chunked runner that yields between slices.
     - _Requirements: 2.4, 2.6_
-  - [ ] 4.2 Tests: balance sign matches pan on synthetic bursts; flux peaks at burst onsets; lowShare high for a 100 Hz tone and low for 4 kHz.
+  - [x] 4.2 Tests: balance sign matches pan on synthetic bursts; flux peaks at burst onsets; lowShare high for a 100 Hz tone and low for 4 kHz.
     - _Requirements: 2.4_
 
 - [ ] 5. Event building (pure)
