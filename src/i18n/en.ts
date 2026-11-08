@@ -62,6 +62,7 @@ export const en: Strings = {
 
   ui: {
     appName: 'Ghost Captions',
+    tagline: 'Shows the sounds that captions leave out — mute the video and the ghosts come out.',
 
     dropPrompt: 'Drop a video or audio file here',
     dropHint: 'Everything stays on your device — nothing is uploaded.',

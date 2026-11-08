@@ -17,6 +17,7 @@ a { color: var(--accent); }
 .app { max-width: 1100px; margin: 0 auto; padding: 16px; }
 .app__header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .app__header h1 { font-size: 1.6rem; margin: 0; letter-spacing: .02em; }
+.app__tagline { margin: 0; color: var(--muted); flex-basis: 100%; }
 .app__error, .notice { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
 
 /* Intake */

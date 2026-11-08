@@ -53,6 +53,8 @@ export interface Strings {
   /** Every other on-screen string. */
   ui: {
     appName: string;
+    /** One line under the title: why the app exists. */
+    tagline: string;
 
     // Intake (Requirement 1).
     dropPrompt: string;

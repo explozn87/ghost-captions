@@ -164,6 +164,7 @@ export function App({ decode, classifier, initialLang }: AppProps = {}): JSX.Ele
     <main className="app">
       <header className="app__header">
         <h1>{strings.ui.appName}</h1>
+        <p className="app__tagline">{strings.ui.tagline}</p>
       </header>
 
       {phase.kind === 'intake' && (

@@ -61,6 +61,7 @@ export const ko: Strings = {
 
   ui: {
     appName: '소리의 유령',
+    tagline: '자막이 빠뜨리는 소리를 보여 줍니다 — 소리를 끄면 유령이 나옵니다.',
 
     dropPrompt: '영상이나 오디오 파일을 여기에 놓으세요',
     dropHint: '모든 처리는 기기 안에서만 이루어지며, 아무것도 업로드되지 않습니다.',

@@ -18,12 +18,13 @@ Who it is for: Deaf and hard-of-hearing viewers first; then everyone who watches
 Do not name or compare with any other product, game or app in the video, README or UI.
 
 ## Principles
-- **Honesty over spectacle.** A ghost appears at a side only when the side is measured with confidence. Otherwise it appears in the centre. A sound we cannot classify is shown as an unknown-sound ghost, never as a guessed label.
+- **Honesty over spectacle.** A ghost appears at a side only when the side is measured with confidence. Otherwise it appears in the centre. A sound we cannot classify is not shown at all (2026-11-08: a screen full of "unknown" reads as unfinished, not honest); never a guessed label.
 - **Information is never only motion or colour.** Every ghost has a text label and a direction word when known. Reduced-motion mode removes shake and drift but keeps every piece of information.
 - **The video never leaves the browser.** All analysis runs on the user's device. No upload, no server, no account.
 - **Measured, not invented.** Labels come from the on-device sound classifier; direction, loudness and rhythm come from signal measurements. No LLM writes captions in V1.
 - Demo clips are public domain or CC0/CC BY with attribution in the app and README.
-- English is the default UI language for judges; Korean is a full second language.
+- The UI follows the browser language (Korean browsers get Korean, everyone else English). The English UI gets the same care as Korean, because judges read English.
+- **Ghosts follow the sound.** By default they come out only while the video is muted and rest when the sound is on; "Always on" is offered first for viewers who cannot hear even with sound.
 
 ## Hackathon requirements we must keep satisfying
 - Keep `/.kiro` (specs, hooks, steering) at the repository root; never add it to `.gitignore`.
