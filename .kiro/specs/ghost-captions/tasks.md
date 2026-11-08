@@ -140,3 +140,11 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
     - _Requirements: 6.5_
   - [x] 19.4 Export: when dialogue cues are loaded, the exported WebVTT merges dialogue cues and sound cues in time order (sound cues in brackets as now), so a creator gets one complete SDH-style file.
     - _Requirements: 8.1, 8.2_
+
+- [ ] 20. Fewer unknowns, quieter settings (feedback 2026-11-08 on the live demo: "settings are messy; why so many unknown sounds?")
+  - [ ] 20.1 No ghost for nothing: map `Silence` (and other "no sound" categories) to a new `silence` value that never creates an event. A window whose best score is below `labelThreshold` no longer becomes an `unknown` event by default; it is dropped. An `unknown` event is created only when the window is both unclassified AND loud and sudden (energy in the clip's top 15 % and an onset in the top 10 %), so unknown means "something loud happened that we cannot name". Add config values with a `why`. Update Req 3.5's behaviour in tests. On the Sintel fixture, assert that at most 2 unknown events remain.
+    - _Requirements: 3.4, 3.5_
+  - [ ] 20.2 Adjacent windows of the same family separated only by a dropped low-score window are merged into one event (so music does not flicker into many short events).
+    - _Requirements: 3.3_
+  - [ ] 20.3 Settings: hidden behind a single "Settings" (gear) button next to Export; the panel shows only Language, Ghost size (Small/Normal/Large), Reduced motion and Burned-in subtitles. The per-family hide toggles move into a collapsed "Hide sound types" disclosure inside the panel. The watch screen by default shows only: the video with overlay, the timeline, and one row of buttons (Export captions, Add dialogue subtitles, Settings, About). The event list is collapsed behind "Show sound list".
+    - _Requirements: 6.7, 7.2, 10.1_
