@@ -12,85 +12,30 @@
 //   - we never print a guessed label: an `unknown` family is written as an
 //     "unknown sound" cue, never as a made-up category name.
 //
-// Phrases live in the `phrases` table below, one block per language, so no
-// user-facing string is hard-coded in the building logic (Requirement 9.2).
-// When the full i18n module lands (task 7) this table can move there; the
-// shape is kept small and self-contained so task 6 does not depend on it.
+// The export's cue phrases are the shared i18n tables (task 7): one source of
+// truth for every user-facing string (Requirement 9.2). This module keeps a
+// small `phrases` view over those tables so the cue builder below depends only
+// on the four fields it needs (family/side/trend/join) and the public API
+// (`phrases`, `Lang`) stays stable.
 
-import type { EventTrack, Family, Side, Trend } from '../shared/types.ts';
+import type { EventTrack } from '../shared/types.ts';
+import { tables, type Lang as I18nLang, type Strings } from '../i18n/index.ts';
 
 /** The languages the export supports, English default (Requirement 9.1). */
-export type Lang = 'en' | 'ko';
+export type Lang = I18nLang;
 
-/** The set of phrases one language needs to render every cue. */
-interface Phrases {
-  /** The name of each ghost family as it should read inside a cue. */
-  family: Record<Family, string>;
-  /** Direction phrase for a known side; `centre-unknown` is never printed. */
-  side: Record<Exclude<Side, 'centre-unknown'>, string>;
-  /** Loudness trend phrase; `steady` is omitted from the cue entirely. */
-  trend: Record<Exclude<Trend, 'steady'>, string>;
-  /** Joins the parts of one cue, e.g. "footsteps, from the left". */
-  join: string;
-}
+/** The subset of a language table one cue needs. */
+type Phrases = Pick<Strings, 'family' | 'side' | 'trend' | 'join'>;
 
 /**
- * All user-facing export strings. English is the default shown to judges;
- * Korean is a full second language (steering). Keys are identical across
- * languages so a cue reads the same shape in either; the i18n key-parity test
- * (task 7) will enforce parity once these move into the shared tables.
+ * Export cue phrases, taken directly from the i18n tables so there is a single
+ * source of truth across the UI, the overlay labels and the caption export.
+ * Keys are identical across languages (the i18n key-parity test enforces it),
+ * so a cue reads the same shape in either language.
  */
 export const phrases: Record<Lang, Phrases> = {
-  en: {
-    family: {
-      footsteps: 'footsteps',
-      door: 'door',
-      voice: 'voice',
-      tenseMusic: 'tense music',
-      calmMusic: 'calm music',
-      impact: 'impact',
-      vehicle: 'vehicle',
-      animal: 'animal',
-      weather: 'weather',
-      alarm: 'alarm',
-      glass: 'breaking glass',
-      unknown: 'unknown sound',
-    },
-    side: {
-      left: 'from the left',
-      right: 'from the right',
-    },
-    trend: {
-      rising: 'getting louder',
-      falling: 'getting quieter',
-    },
-    join: ', ',
-  },
-  ko: {
-    family: {
-      footsteps: '발소리',
-      door: '문소리',
-      voice: '목소리',
-      tenseMusic: '긴장된 음악',
-      calmMusic: '잔잔한 음악',
-      impact: '충격음',
-      vehicle: '차량 소리',
-      animal: '동물 소리',
-      weather: '날씨 소리',
-      alarm: '경보음',
-      glass: '유리 깨지는 소리',
-      unknown: '알 수 없는 소리',
-    },
-    side: {
-      left: '왼쪽에서',
-      right: '오른쪽에서',
-    },
-    trend: {
-      rising: '점점 커짐',
-      falling: '점점 작아짐',
-    },
-    join: ', ',
-  },
+  en: tables.en,
+  ko: tables.ko,
 };
 
 /**

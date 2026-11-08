@@ -1,0 +1,89 @@
+// Korean string table — the full second language (Requirement 9.1, steering).
+//
+// Keys match `en.ts` exactly through the shared `Strings` contract and the
+// key-parity test. The family/side/trend phrases match what the WebVTT export
+// emitted for Korean in task 6.
+
+import type { Strings } from './strings.ts';
+
+export const ko: Strings = {
+  languageName: '한국어',
+
+  family: {
+    footsteps: '발소리',
+    door: '문소리',
+    voice: '목소리',
+    tenseMusic: '긴장된 음악',
+    calmMusic: '잔잔한 음악',
+    impact: '충격음',
+    vehicle: '차량 소리',
+    animal: '동물 소리',
+    weather: '날씨 소리',
+    alarm: '경보음',
+    glass: '유리 깨지는 소리',
+    unknown: '알 수 없는 소리',
+  },
+  side: {
+    left: '왼쪽에서',
+    right: '오른쪽에서',
+  },
+  trend: {
+    rising: '점점 커짐',
+    falling: '점점 작아짐',
+  },
+  join: ', ',
+
+  loudness: {
+    quiet: '조용함',
+    medium: '보통',
+    loud: '큼',
+  },
+  ominous: {
+    calm: '평온',
+    uneasy: '불안',
+    dread: '공포',
+  },
+
+  ui: {
+    appName: '소리의 유령',
+
+    dropPrompt: '영상이나 오디오 파일을 여기에 놓으세요',
+    dropHint: '모든 처리는 기기 안에서만 이루어지며, 아무것도 업로드되지 않습니다.',
+    chooseFile: '파일 선택',
+    orPickDemo: '또는 데모 클립을 고르세요',
+
+    analysing: '유령을 찾는 중…',
+    analysingHint: '유령이 정확한 순간에 나타나도록 오디오를 분석하고 있습니다.',
+
+    monoNotice: '이 클립은 모노라서 방향을 알 수 없습니다. 모든 유령이 가운데에 나타납니다.',
+    labelsUnavailable: '소리 이름을 사용할 수 없어, 소리를 알 수 없는 유령으로 표시합니다.',
+    decodeErrorPrefix: '열 수 없는 파일',
+    decodeErrorSuggest: 'MP4(H.264 + AAC)나 WebM 같은 일반적인 형식을 사용해 보세요.',
+
+    timeline: '타임라인',
+    eventList: '소리 목록',
+    exportCaptions: '자막 내보내기',
+    settings: '설정',
+    aboutGhosts: '유령에 대하여',
+    reducedMotion: '모션 줄이기',
+    ghostSize: '유령 크기',
+    muteFamily: '이 소리 숨기기',
+    language: '언어',
+
+    colTime: '시간',
+    colSound: '소리',
+    colDirection: '방향',
+    colLoudness: '크기',
+    colOminous: '분위기',
+    speechMarker: '말소리',
+
+    aboutMeasured:
+      '방향, 크기, 긴장감, 리듬은 기기 안에서 오디오 신호로부터 측정됩니다.',
+    aboutGuessed:
+      '각 소리가 무엇인지는 기기 안의 분류기가 추정한 것이라 틀릴 수 있습니다. 확신이 없는 소리는 지어낸 이름 대신 알 수 없는 유령으로 표시됩니다.',
+    aboutLimits:
+      '혼합된 영화 사운드트랙은 방향을 숨기는 경우가 많고, 겹치는 소리는 하나의 유령으로 표시됩니다.',
+    aboutNotReplacement:
+      '소리의 유령은 전문 자막이나 화면 해설을 대체하지 않습니다.',
+  },
+};

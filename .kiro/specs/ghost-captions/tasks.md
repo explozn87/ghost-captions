@@ -46,8 +46,8 @@ Order: scaffold → types & config → synthetic signals → pure measurement �
   - [x] 6.2 Property test P5 with a small WebVTT parser.
     - _Requirements: 8.1, NFR-7_
 
-- [ ] 7. i18n
-  - [ ] 7.1 `en.ts`, `ko.ts`, `t()` helper, default English; key-parity test.
+- [x] 7. i18n
+  - [x] 7.1 `en.ts`, `ko.ts`, `t()` helper, default English; key-parity test.
     - _Requirements: 9.1, 9.2_
 
 - [ ] 8. Overlay layout and drawing
