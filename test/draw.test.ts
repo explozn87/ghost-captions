@@ -110,7 +110,15 @@ function sprite(over: Partial<GhostSprite> = {}): GhostSprite {
 }
 
 function fog(over: Partial<EdgeFog> = {}): EdgeFog {
-  return { family: 'wind', edge: 'all', opacity: 0.3, label: 'wind', ...over };
+  return {
+    family: 'wind',
+    edge: 'all',
+    opacity: 0.3,
+    label: 'wind',
+    texture: 'windStreaks',
+    textureDensity: 0.5,
+    ...over,
+  };
 }
 
 describe('draw: clears then paints (task 8.2)', () => {
@@ -241,6 +249,242 @@ describe('draw: no brightness flashing (task 8.2, Req 10.3)', () => {
     });
     for (const set of colourSets) {
       expect(set).toEqual(colourSets[0]);
+    }
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Task 18: make ambient sounds unmistakable.
+// ---------------------------------------------------------------------------
+
+describe('draw: visible lavender edge fog (task 18.1)', () => {
+  it('uses the pale lavender colour (205,200,240), not the old dark grey-blue', () => {
+    const ctx = makeFakeCtx();
+    draw(ctx, [], [fog({ edge: 'left', label: 'wind' })], 0, false, { loader: silhouetteOnlyLoader });
+    const lavender = ctx.calls.some(
+      (c) => typeof c.fillStyle === 'string' && c.fillStyle.includes('205,200,240'),
+    );
+    const oldGrey = ctx.calls.some(
+      (c) => typeof c.fillStyle === 'string' && c.fillStyle.includes('90,100,120'),
+    );
+    expect(lavender).toBe(true);
+    expect(oldGrey).toBe(false);
+  });
+});
+
+/**
+ * A compositing fake 2D context that actually writes pixels, so a test can
+ * measure how much the edge fog changes a black frame (task 18.1). It supports
+ * only the subset `draw` uses for fog: linear gradients + fillRect. Pixels are
+ * a single-channel luminance grid (the lavender fog raises luminance). The
+ * gradient blends its edge colour's alpha linearly to zero across the rect.
+ */
+function makeCompositingCtx(width: number, height: number) {
+  const px = new Float64Array(width * height); // luminance 0..255, starts black
+  let currentGrad: { x0: number; x1: number; a0: number; a1: number; lum: number } | null = null;
+
+  const ctx = {
+    canvas: { width, height },
+    fillStyle: '#000' as string | CanvasGradient,
+    globalAlpha: 1,
+    font: '',
+    textAlign: '',
+    textBaseline: '',
+    save() {},
+    restore() {},
+    translate() {},
+    scale() {},
+    beginPath() {},
+    fill() {},
+    clearRect() {},
+    fillText() {},
+    measureText(t: string) {
+      return { width: t.length * 8 };
+    },
+    drawImage() {},
+    createRadialGradient() {
+      return { addColorStop() {} };
+    },
+    createLinearGradient(x0: number, _y0: number, x1: number, _y1: number) {
+      const g = { x0, x1, a0: 0, a1: 0, lum: 255 };
+      const grad = {
+        addColorStop(offset: number, colour: string) {
+          const m = /rgba?\(([^)]+)\)/.exec(colour);
+          if (!m) return;
+          const parts = m[1]!.split(',').map((s) => Number(s.trim()));
+          const alpha = parts.length >= 4 ? parts[3]! : 1;
+          const lum = (parts[0]! + parts[1]! + parts[2]!) / 3;
+          if (offset === 0) {
+            g.a0 = alpha;
+            g.lum = lum;
+          } else {
+            g.a1 = alpha;
+          }
+        },
+      };
+      // Remember the gradient the next fillRect will use.
+      currentGrad = g;
+      return grad;
+    },
+    fillRect(x: number, y: number, w: number, h: number) {
+      const grad = typeof this.fillStyle === 'string' ? null : currentGrad;
+      for (let yy = Math.max(0, y | 0); yy < Math.min(height, (y + h) | 0); yy++) {
+        for (let xx = Math.max(0, x | 0); xx < Math.min(width, (x + w) | 0); xx++) {
+          let alpha: number;
+          let lum: number;
+          if (grad) {
+            // Linear alpha from a0 (at grad.x0) to a1 (at grad.x1).
+            const span = grad.x1 - grad.x0;
+            const frac = span !== 0 ? (xx - grad.x0) / span : 0;
+            const f = Math.max(0, Math.min(1, frac));
+            alpha = grad.a0 + (grad.a1 - grad.a0) * f;
+            lum = grad.lum;
+          } else {
+            // Solid fill: parse the current string colour.
+            const m = /rgba?\(([^)]+)\)/.exec(this.fillStyle as string);
+            if (!m) continue;
+            const parts = m[1]!.split(',').map((s) => Number(s.trim()));
+            alpha = (parts.length >= 4 ? parts[3]! : 1) * this.globalAlpha;
+            lum = (parts[0]! + parts[1]! + parts[2]!) / 3;
+          }
+          const idx = yy * width + xx;
+          px[idx] = px[idx]! * (1 - alpha) + lum * alpha;
+        }
+      }
+    },
+  };
+  return { ctx: ctx as unknown as Ctx2D, pixels: px, width, height };
+}
+
+describe('draw: fog visibly changes edge pixels but not the centre (task 18.1)', () => {
+  it('a medium-loud wind over a black frame raises outer-band luminance by >= 40/255, centre untouched', () => {
+    const W = 1000;
+    const H = 600;
+    const { ctx, pixels } = makeCompositingCtx(W, H);
+    // A left-side wind fog near the top of the visible range (opacity ~0.3).
+    // A known side keeps the label plate and sprite inside the left band, so
+    // the central 60% is genuinely clear of everything.
+    draw(ctx, [], [fog({ edge: 'left', opacity: 0.3, label: 'wind' })], 0, false, {
+      loader: silhouetteOnlyLoader,
+    });
+
+    // Outer band: the leftmost 10% columns.
+    const outerCols = Math.floor(W * 0.1);
+    let outerSum = 0;
+    let outerN = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < outerCols; x++) {
+        outerSum += pixels[y * W + x]!;
+        outerN++;
+      }
+    }
+    const outerMean = outerSum / outerN;
+    expect(outerMean).toBeGreaterThanOrEqual(40);
+
+    // Central 60% (x in 0.2..0.8) is never touched by the fog, texture, sprite
+    // or label — all of which sit in the covered side band.
+    let centreMax = 0;
+    for (let y = 0; y < H; y++) {
+      for (let x = Math.floor(W * 0.2); x < Math.floor(W * 0.8); x++) {
+        centreMax = Math.max(centreMax, pixels[y * W + x]!);
+      }
+    }
+    expect(centreMax).toBe(0);
+  });
+});
+
+describe('draw: ambient band texture per family (task 18.2)', () => {
+  function textureRects(texture: EdgeFog['texture'], time: number, reducedMotion: boolean) {
+    const ctx = makeFakeCtx(400, 200);
+    draw(ctx, [], [fog({ edge: 'left', texture, textureDensity: 0.8 })], time, reducedMotion, {
+      loader: silhouetteOnlyLoader,
+    });
+    // Texture shapes use the lavender colour and are fillRects.
+    return ctx.calls.filter(
+      (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('205,200,240'),
+    );
+  }
+
+  it('draws lavender texture shapes for wind, rain, thunder and notes', () => {
+    for (const texture of ['windStreaks', 'rainStreaks', 'thunderSwell', 'notesTense', 'notesCalm'] as const) {
+      expect(textureRects(texture, 0, false).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('wind texture moves between frames with motion on, and is static under reduced motion', () => {
+    const ctxA = makeFakeCtx(400, 200);
+    const ctxB = makeFakeCtx(400, 200);
+    const f = fog({ edge: 'left', texture: 'windStreaks', textureDensity: 0.8 });
+    draw(ctxA, [], [f], 0, false, { loader: silhouetteOnlyLoader });
+    draw(ctxB, [], [f], 1, false, { loader: silhouetteOnlyLoader });
+    const posA = ctxA.calls.filter((c) => c.op === 'fillRect').map((c) => c.args[0]);
+    const posB = ctxB.calls.filter((c) => c.op === 'fillRect').map((c) => c.args[0]);
+    expect(posA).not.toEqual(posB);
+
+    const ctxC = makeFakeCtx(400, 200);
+    const ctxD = makeFakeCtx(400, 200);
+    draw(ctxC, [], [f], 0, true, { loader: silhouetteOnlyLoader });
+    draw(ctxD, [], [f], 5, true, { loader: silhouetteOnlyLoader });
+    const posC = ctxC.calls.filter((c) => c.op === 'fillRect').map((c) => c.args[0]);
+    const posD = ctxD.calls.filter((c) => c.op === 'fillRect').map((c) => c.args[0]);
+    expect(posC).toEqual(posD); // static texture at the same density
+  });
+
+  it('thunder swell colour does not flash across frames (Req 10.3)', () => {
+    // Over several frames the fill colour of the thunder swell stays constant;
+    // only its width breathes, never its brightness.
+    const f = fog({ edge: 'left', texture: 'thunderSwell', textureDensity: 0.6 });
+    const colours = [0, 0.3, 0.6, 1, 1.5].map((t) => {
+      const ctx = makeFakeCtx(400, 200);
+      draw(ctx, [], [f], t, false, { loader: silhouetteOnlyLoader });
+      return ctx.calls
+        .filter((c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('205,200,240'))
+        .map((c) => `${c.fillStyle}:${c.globalAlpha}`);
+    });
+    for (const set of colours) expect(set).toEqual(colours[0]);
+  });
+});
+
+describe('draw: ambient event shows its family sprite and label (task 18.3)', () => {
+  it('draws the family sprite (PNG when loaded) inside the fog band plus a label', () => {
+    const loader = makeImageLoader();
+    const ctx = makeFakeCtx(400, 200);
+    draw(ctx, [], [fog({ family: 'rain', edge: 'left', label: 'rain', texture: 'rainStreaks' })], 0, false, {
+      loader,
+    });
+    const images = ctx.calls.filter((c) => c.op === 'drawImage');
+    const texts = ctx.calls.filter((c) => c.op === 'fillText').map((c) => c.args[0]);
+    expect(images.length).toBeGreaterThanOrEqual(1); // the ambient sprite
+    expect(loader.requested).toContain('rain');
+    expect(texts).toContain('rain');
+  });
+
+  it('falls back to the silhouette when the family image is missing', () => {
+    const ctx = makeFakeCtx(400, 200);
+    draw(ctx, [], [fog({ family: 'thunder', edge: 'all', label: 'thunder', texture: 'thunderSwell' })], 0, false, {
+      loader: silhouetteOnlyLoader,
+    });
+    const fills = ctx.calls.filter((c) => c.op === 'fill'); // Path2D silhouette
+    expect(fills.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('keeps the ambient sprite and label in the upper band, clear of the caption band', () => {
+    const H = 200;
+    const loader = makeImageLoader();
+    const ctx = makeFakeCtx(400, H);
+    draw(ctx, [], [fog({ family: 'wind', edge: 'left', label: 'wind' })], 0, false, { loader });
+    // The ambient sprite is drawn with drawImage; its box top/bottom must stay
+    // above the caption band (bottom 18%).
+    const captionTop = H * (1 - 0.18);
+    for (const c of ctx.calls.filter((c) => c.op === 'drawImage')) {
+      const dy = c.args[2] as number;
+      const dh = c.args[4] as number;
+      expect(dy + dh).toBeLessThanOrEqual(captionTop);
+    }
+    // Label y stays in the upper band too.
+    for (const c of ctx.calls.filter((c) => c.op === 'fillText')) {
+      expect(c.args[2] as number).toBeLessThan(captionTop);
     }
   });
 });

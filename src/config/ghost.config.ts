@@ -49,12 +49,25 @@ export interface GhostConfig {
    * family drawn as a ghost.
    */
   ambientFamilies: { value: readonly Family[]; why: string };
-  /** How fast edge fog rises when an ambient event starts/grows (0..1/frame-ish). */
+  /** How fast edge fog rises when an ambient event starts/grows, in opacity per second (task 18.1). */
   edgeFogAttack: Tuned;
-  /** How slowly edge fog decays once the sound stops rising. */
+  /** How slowly edge fog decays once the sound stops rising, in opacity per second (task 18.1). */
   edgeFogRelease: Tuned;
   /** Hard cap on edge-fog opacity so the centre stays clear (<= 0.45). */
   edgeFogMaxOpacity: Tuned;
+  /**
+   * The opacity a medium-loud ambient event reaches at the outer edge once it
+   * has fully attacked (task 18.1). The old dark-grey fog at ~0.2 was invisible
+   * on the Sintel wind scene; a visible floor guarantees the fog reads.
+   */
+  edgeFogMinVisible: Tuned;
+  /**
+   * How each ambient family's fog band is textured (task 18.2): the motion
+   * drawn inside the vignette so the viewer can tell wind from rain from music
+   * without reading the label. Reduced motion freezes the texture at the same
+   * density.
+   */
+  ambientTexture: { value: Record<Family, AmbientTexture>; why: string };
   /**
    * Default ghost diameter as a fraction of the viewport's shorter side, before
    * the loudness and size-control multipliers (task 17.1). Ghosts were too
@@ -81,6 +94,23 @@ export interface GhostConfig {
  * drawn as edge fog and never use these.
  */
 export type MotionKind = 'cross' | 'edgeReact' | 'hover';
+
+/**
+ * The motion texture drawn inside an ambient event's fog band (task 18.2).
+ * Only the five ambient families use one; every other family is `none`.
+ *   - `windStreaks`  horizontal streaks drifting across the band;
+ *   - `rainStreaks`  thin falling streaks;
+ *   - `thunderSwell` a single slow edge swell, never a flash (Req 10.3);
+ *   - `notesTense` / `notesCalm` a few note shapes drifting slowly, sharper and
+ *     faster for tense music.
+ */
+export type AmbientTexture =
+  | 'none'
+  | 'windStreaks'
+  | 'rainStreaks'
+  | 'thunderSwell'
+  | 'notesTense'
+  | 'notesCalm';
 
 export const ghostConfig = {
   labelThreshold: {
@@ -155,16 +185,46 @@ export const ghostConfig = {
     why: 'These sounds fill the whole scene rather than coming from one point, so they are drawn as edge fog from the screen edges (task 16.3) instead of a ghost: wind/rain/thunder are weather that surrounds the viewer, and music underscores the scene rather than emanating from an object. Every other family is a point sound drawn as a ghost.',
   },
   edgeFogAttack: {
-    value: 0.12,
-    why: 'Edge-fog opacity rises by at most ~0.12 per overlay frame when an ambient event starts or its loudness rises, so the fog swells in under a second rather than snapping on — a gentle arrival, never a flash (Req 10.3, task 16.3).',
+    value: 1.2,
+    why: 'Edge-fog opacity rises by up to 1.2 per second when an ambient event starts or its loudness rises, so the fog swells to a visible level in well under a second rather than snapping on — a gentle arrival, never a flash (Req 10.3). Expressed per second (task 18.1) so the fog looks the same at any overlay frame rate.',
   },
   edgeFogRelease: {
-    value: 0.03,
-    why: 'Once the sound stops rising the fog decays by ~0.03 per frame, a slow fade over a couple of seconds so an ended ambient sound lingers and withdraws rather than vanishing abruptly (task 16.3).',
+    value: 0.2,
+    why: 'Once the sound stops rising the fog decays by 0.2 per second, a slow fade over roughly two seconds so an ended ambient sound lingers and withdraws rather than vanishing abruptly (task 16.3). Per second (task 18.1), and slower than the attack so fog swells in and lingers out.',
   },
   edgeFogMaxOpacity: {
     value: 0.45,
     why: 'Edge fog never exceeds 0.45 opacity and only touches the outer edges, so the central 60% of the frame is always clear and readable (Req 6.5, task 16.3).',
+  },
+  edgeFogMinVisible: {
+    value: 0.3,
+    why: 'A medium-loud ambient event reaches at least 0.30 opacity at the outer edge once attacked (task 18.1). The earlier dark grey-blue fog peaked around 0.2 and was invisible on the Sintel wind scene (measured mean edge change of only 4/255); 0.30 of the pale-lavender colour is a clearly visible band while staying under the 0.45 cap.',
+  },
+  ambientTexture: {
+    value: {
+      wind: 'windStreaks',
+      rain: 'rainStreaks',
+      thunder: 'thunderSwell',
+      tenseMusic: 'notesTense',
+      calmMusic: 'notesCalm',
+      // Every point family has no fog band, so no texture.
+      footsteps: 'none',
+      door: 'none',
+      knock: 'none',
+      scream: 'none',
+      laughter: 'none',
+      crying: 'none',
+      singing: 'none',
+      impact: 'none',
+      gunshot: 'none',
+      vehicle: 'none',
+      siren: 'none',
+      animal: 'none',
+      fire: 'none',
+      glass: 'none',
+      unknown: 'none',
+    },
+    why: 'Each ambient family gets a distinct motion inside its fog band so the viewer can tell the sounds apart without reading the label (task 18.2, Req 6.2): wind drifts as soft horizontal streaks, rain falls as thin streaks, thunder is one slow edge swell (never a flash, Req 10.3), and music drifts a few note shapes — sharper and faster for tense, softer and slower for calm. Point families carry no fog band and so have no texture.',
   },
   ghostDiameterFrac: {
     value: 0.3,
@@ -218,4 +278,16 @@ export function isAmbientFamily(
   cfg: GhostConfig = ghostConfig,
 ): boolean {
   return cfg.ambientFamilies.value.includes(family);
+}
+
+/**
+ * The motion texture for a family's fog band (task 18.2). Point families return
+ * `none`. Reads the single `ambientTexture` table so the overlay and tests
+ * share one source of truth.
+ */
+export function ambientTextureOf(
+  family: Family,
+  cfg: GhostConfig = ghostConfig,
+): AmbientTexture {
+  return cfg.ambientTexture.value[family];
 }

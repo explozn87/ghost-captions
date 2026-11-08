@@ -37,10 +37,10 @@
 //   - reduced motion removes tremble, travel and enter/withdraw motion but
 //     keeps position band, size, fog level and label (Req 6.6).
 
-import type { EdgeFog, FogEdge, GhostSprite, Side, SoundEvent } from '../shared/types.ts';
+import type { EdgeFog, FogEdge, FogTexture, GhostSprite, Side, SoundEvent } from '../shared/types.ts';
 import { tables, type Lang, type Strings } from '../i18n/index.ts';
 import { soundNoun } from '../i18n/soundLabel.ts';
-import { ghostConfig, isAmbientFamily, type GhostConfig } from '../config/ghost.config.ts';
+import { ambientTextureOf, ghostConfig, isAmbientFamily, type GhostConfig } from '../config/ghost.config.ts';
 
 /** The drawable area the overlay covers, in CSS pixels. */
 export interface Viewport {
@@ -446,12 +446,18 @@ function fogEdgeFor(side: Side): FogEdge {
 
 /**
  * The target edge-fog opacity for an ambient event: driven by loudness and
- * ominousness, capped by `edgeFogMaxOpacity` (task 16.3). A loud, ominous
- * sound (a thunderclap) pushes toward the cap; a soft, calm one stays faint.
+ * ominousness, lifted so a medium-loud event is clearly visible and capped by
+ * `edgeFogMaxOpacity` (tasks 16.3, 18.1). The drive (0..1) is mapped onto
+ * `[edgeFogMinVisible, edgeFogMaxOpacity]` so even a soft ambient sound reads
+ * at the outer edge, while a loud, ominous one (a thunderclap) pushes toward
+ * the cap. The earlier linear `drive × cap` mapping peaked around 0.2 for a
+ * medium wind and was invisible (measured 4/255 on the Sintel wind scene).
  */
 function fogTarget(event: SoundEvent, cfg: GhostConfig): number {
-  const drive = 0.5 * event.loudness + 0.5 * event.ominous;
-  return clamp01(drive) * cfg.edgeFogMaxOpacity.value;
+  const drive = clamp01(0.5 * event.loudness + 0.5 * event.ominous);
+  const floor = cfg.edgeFogMinVisible.value;
+  const cap = cfg.edgeFogMaxOpacity.value;
+  return clamp01(floor + drive * (cap - floor));
 }
 
 /**
@@ -472,10 +478,10 @@ function fogOpacityAt(event: SoundEvent, t: number, reducedMotion: boolean, cfg:
     // Steady fog while active, nothing once ended.
     return t >= event.start && t < event.end ? target : 0;
   }
-  // Per-second rates derived from the per-frame config values (~60 fps).
-  const FPS = 60;
-  const attackPerSec = cfg.edgeFogAttack.value * FPS;
-  const releasePerSec = cfg.edgeFogRelease.value * FPS;
+  // Attack/release are already expressed in opacity per second (task 18.1), so
+  // the fog looks the same at any overlay frame rate.
+  const attackPerSec = cfg.edgeFogAttack.value;
+  const releasePerSec = cfg.edgeFogRelease.value;
 
   if (t < event.start) return 0;
   if (t < event.end) {
@@ -492,8 +498,7 @@ function fogOpacityAt(event: SoundEvent, t: number, reducedMotion: boolean, cfg:
  * caller selecting "recently active" events knows how far back to look.
  */
 export function fogDecayDuration(cfg: GhostConfig = ghostConfig): number {
-  const FPS = 60;
-  return cfg.edgeFogMaxOpacity.value / (cfg.edgeFogRelease.value * FPS);
+  return cfg.edgeFogMaxOpacity.value / cfg.edgeFogRelease.value;
 }
 
 /**
@@ -519,11 +524,16 @@ export function edgeFogs(
     if (settings.mutedFamilies.has(event.family)) continue;
     const opacity = fogOpacityAt(event, t, settings.reducedMotion, cfg);
     if (opacity <= 0) continue;
+    // Texture density tracks loudness/ominousness so a louder, more ominous
+    // ambient sound has a denser band texture (task 18.2).
+    const textureDensity = clamp01(0.5 * event.loudness + 0.5 * event.ominous);
     fogs.push({
       family: event.family,
       edge: fogEdgeFor(event.side),
       opacity,
       label: spriteLabel(event, s, settings.lang),
+      texture: ambientTextureOf(event.family, cfg) as FogTexture,
+      textureDensity,
     });
   }
   return fogs;

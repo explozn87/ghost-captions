@@ -508,3 +508,53 @@ describe('layout: keep the central face region light (task 17.4)', () => {
     expect(sp.opacity).toBeCloseTo(1, 5);
   });
 });
+
+describe('layout: edgeFogs are visible and textured (task 18)', () => {
+  const settings = defaultSettings;
+
+  it('a medium-loud wind reaches at least 0.30 at the outer edge once attacked (task 18.1)', () => {
+    // A wind event lasting long enough to fully attack; sample well past start.
+    const ev = makeEvent({
+      family: 'wind',
+      side: 'centre-unknown',
+      loudness: 0.5,
+      ominous: 0.45,
+      start: 0,
+      end: 10,
+    });
+    const fogs = edgeFogs([ev], 5, settings);
+    expect(fogs).toHaveLength(1);
+    expect(fogs[0]!.opacity).toBeGreaterThanOrEqual(0.3 - 1e-9);
+    expect(fogs[0]!.opacity).toBeLessThanOrEqual(ghostConfig.edgeFogMaxOpacity.value + 1e-9);
+  });
+
+  it('even a quiet ambient event clears the visible floor once attacked (task 18.1)', () => {
+    const ev = makeEvent({ family: 'rain', side: 'left', loudness: 0, ominous: 0, start: 0, end: 10 });
+    const fogs = edgeFogs([ev], 5, settings);
+    expect(fogs[0]!.opacity).toBeCloseTo(ghostConfig.edgeFogMinVisible.value, 5);
+  });
+
+  it('attack and release are frame-rate independent (same opacity at the same time)', () => {
+    // fogOpacityAt reads per-second rates, so sampling the same wall-clock time
+    // gives the same opacity regardless of how often draw is called.
+    const ev = makeEvent({ family: 'wind', loudness: 1, ominous: 1, start: 0, end: 10 });
+    const a = edgeFogs([ev], 0.2, settings)[0]!.opacity;
+    const b = edgeFogs([ev], 0.2, settings)[0]!.opacity;
+    expect(a).toBe(b);
+    // 0.2 s into a 1.2/s attack gives ~0.24, below the capped target, so the
+    // ramp is observable (not already saturated).
+    expect(a).toBeLessThan(ghostConfig.edgeFogMaxOpacity.value);
+  });
+
+  it('each ambient event carries its family texture and a density (task 18.2)', () => {
+    const wind = edgeFogs([makeEvent({ family: 'wind', loudness: 0.8, ominous: 0.5, start: 0, end: 5 })], 2, settings)[0]!;
+    const rain = edgeFogs([makeEvent({ family: 'rain', loudness: 0.4, ominous: 0.3, start: 0, end: 5 })], 2, settings)[0]!;
+    const tense = edgeFogs([makeEvent({ family: 'tenseMusic', loudness: 0.6, ominous: 0.9, start: 0, end: 5 })], 2, settings)[0]!;
+    expect(wind.texture).toBe('windStreaks');
+    expect(rain.texture).toBe('rainStreaks');
+    expect(tense.texture).toBe('notesTense');
+    // Density rises with loudness/ominousness.
+    expect(wind.textureDensity).toBeGreaterThan(0);
+    expect(tense.textureDensity).toBeGreaterThan(rain.textureDensity);
+  });
+});

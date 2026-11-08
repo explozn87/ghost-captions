@@ -160,10 +160,25 @@ export interface GhostSprite {
 export type FogEdge = 'left' | 'right' | 'all';
 
 /**
+ * The motion texture drawn inside an ambient event's fog band (task 18.2).
+ * Mirrors the config `AmbientTexture` so `draw` can switch on it without
+ * importing config types.
+ */
+export type FogTexture =
+  | 'none'
+  | 'windStreaks'
+  | 'rainStreaks'
+  | 'thunderSwell'
+  | 'notesTense'
+  | 'notesCalm';
+
+/**
  * An ambient sound drawn as a vignette from the screen edges instead of a
  * ghost (task 16.3). `wind, rain, thunder, tenseMusic, calmMusic` produce
  * these. The central 60% of the frame is never covered; the text label sits
- * near the relevant edge on a backing plate.
+ * near the relevant edge on a backing plate. The fog band also carries a
+ * motion texture (task 18.2) and the family's sprite at reduced size (task
+ * 18.3) so the viewer can identify the sound without the animation.
  */
 export interface EdgeFog {
   family: Family;
@@ -173,4 +188,11 @@ export interface EdgeFog {
   opacity: number;
   /** The text label shown near the edge (never only motion/colour). */
   label: string;
+  /** The motion texture drawn inside the band (task 18.2). */
+  texture: FogTexture;
+  /**
+   * Density of the texture in 0..1 (driven by loudness/ominousness), so the
+   * texture is denser for a louder, more ominous ambient sound (task 18.2).
+   */
+  textureDensity: number;
 }

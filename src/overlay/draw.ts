@@ -28,7 +28,7 @@
 // "pulse" is a small opacity breathing well under 3 Hz, disabled under reduced
 // motion (Req 10.3).
 
-import type { EdgeFog, Family, FogEdge, GhostSprite } from '../shared/types.ts';
+import type { EdgeFog, Family, FogEdge, FogTexture, GhostSprite } from '../shared/types.ts';
 import { FOG_CLEAR_CENTRE, baseRadiusFrac } from './layout.ts';
 
 /**
@@ -284,7 +284,7 @@ export function draw(
 
   // Ambient edge fog sits behind the ghosts.
   for (const fog of fogs) {
-    drawEdgeFog(ctx, fog, time, reducedMotion);
+    drawEdgeFog(ctx, fog, time, reducedMotion, loader, minDim);
   }
 
   for (const sprite of sprites) {
@@ -339,16 +339,39 @@ function drawFog(
 }
 
 /**
- * Draw one ambient event as an edge vignette (task 16.3). A linear gradient
- * fades from a translucent grey at the covered edge to fully transparent by
- * `FOG_CLEAR_CENTRE` of the way across, so the central 60% of the frame is
- * never covered (Req 6.5). Whole-frame fog paints both the left and right
- * edges; a known side paints only that edge. The opacity, already capped and
- * smoothed by layout, is shown as-is (no brightness oscillation — a slow
- * steady vignette, so thunder reads as one slow pulse, never a white flash,
- * Req 10.3). The label sits near the edge on a dark backing plate (Req 10.2).
+ * Pale lavender light for the edge fog (task 18.1). Chosen so the fog is
+ * clearly visible over both dark and bright video — the earlier dark grey-blue
+ * (90,100,120) vanished on dark scenes (measured 4/255 edge change on the
+ * Sintel wind scene). Lavender reads against black and still shows against a
+ * bright frame.
  */
-function drawEdgeFog(ctx: Ctx2D, fog: EdgeFog, _time: number, _reducedMotion: boolean): void {
+const FOG_RGB = '205,200,240';
+
+/**
+ * Draw one ambient event as an edge vignette (tasks 16.3, 18.1–18.3). A linear
+ * gradient of pale lavender light fades from the covered edge to fully
+ * transparent by `FOG_CLEAR_CENTRE` of the way across, so the central 60% of
+ * the frame is never covered (Req 6.5). Whole-frame fog paints both the left
+ * and right edges; a known side paints only that edge. The opacity, already
+ * capped and smoothed by layout, is shown as-is (no brightness oscillation — a
+ * slow steady vignette, so thunder reads as one slow pulse, never a white
+ * flash, Req 10.3).
+ *
+ * Inside the band it adds a per-family motion texture (task 18.2: wind
+ * streaks, rain streaks, a thunder swell, drifting notes) and the family's
+ * sprite at half the point-ghost size with the label on a backing plate (task
+ * 18.3), both in the upper part of the band so the viewer can identify the
+ * sound without the animation (Req 6.3, 6.4) and nothing reaches the caption
+ * band (Req 6.5). Reduced motion freezes the texture at the same density.
+ */
+function drawEdgeFog(
+  ctx: Ctx2D,
+  fog: EdgeFog,
+  time: number,
+  reducedMotion: boolean,
+  loader: SpriteImageLoader,
+  minDim: number,
+): void {
   if (fog.opacity <= 0) return;
   const W = ctx.canvas.width;
   const H = ctx.canvas.height;
@@ -361,8 +384,8 @@ function drawEdgeFog(ctx: Ctx2D, fog: EdgeFog, _time: number, _reducedMotion: bo
     const x0 = which === 'left' ? 0 : W;
     const x1 = which === 'left' ? bandW : W - bandW;
     const grad = ctx.createLinearGradient(x0, 0, x1, 0);
-    grad.addColorStop(0, `rgba(90,100,120,${fog.opacity.toFixed(3)})`);
-    grad.addColorStop(1, 'rgba(90,100,120,0)');
+    grad.addColorStop(0, `rgba(${FOG_RGB},${fog.opacity.toFixed(3)})`);
+    grad.addColorStop(1, `rgba(${FOG_RGB},0)`);
     ctx.save();
     ctx.fillStyle = grad as unknown as CanvasGradient;
     ctx.globalAlpha = 1;
@@ -372,16 +395,140 @@ function drawEdgeFog(ctx: Ctx2D, fog: EdgeFog, _time: number, _reducedMotion: bo
   };
 
   const edges: FogEdge = fog.edge;
-  if (edges === 'all') {
-    paintEdge('left');
-    paintEdge('right');
-  } else {
-    paintEdge(edges);
+  const paintedEdges: Array<'left' | 'right'> = edges === 'all' ? ['left', 'right'] : [edges];
+  for (const e of paintedEdges) paintEdge(e);
+
+  // Band texture inside each covered edge (task 18.2).
+  for (const e of paintedEdges) {
+    const bandX = e === 'left' ? 0 : W - bandW;
+    drawFogTexture(ctx, fog, bandX, bandW, H, time, reducedMotion);
   }
 
-  // Label near the covered edge, vertically in the upper third.
-  const labelX = edgeLabelX(fog.edge, W, bandW);
-  drawLabel(ctx, fog.label, labelX, H * 0.12, 1);
+  // The family's sprite at half the point-ghost size, in the upper band (task
+  // 18.3), so the sound is identifiable without the animation.
+  const spriteX = edgeLabelX(fog.edge, W, bandW);
+  const ambientRadius = baseRadiusFrac() * 0.5 * minDim;
+  drawAmbientSprite(ctx, fog.family, spriteX, H * 0.22, ambientRadius, fog.opacity, loader);
+
+  // Label on a dark backing plate near the edge, above the sprite in the upper
+  // part of the band — never in the caption band (Req 6.4, 6.5, 10.2).
+  drawLabel(ctx, fog.label, spriteX, H * 0.1, 1);
+}
+
+/**
+ * Draw the per-family motion texture inside one fog band (task 18.2). The band
+ * occupies `[bandX, bandX+bandW] × [0, H]`; shapes stay inside it. Motion is
+ * driven by `time` and dropped under reduced motion (a static texture at the
+ * same density). Density (count of shapes) scales with `fog.textureDensity`.
+ * All shapes use the same lavender light as the fog, so nothing flashes
+ * (Req 10.3).
+ */
+function drawFogTexture(
+  ctx: Ctx2D,
+  fog: EdgeFog,
+  bandX: number,
+  bandW: number,
+  H: number,
+  time: number,
+  reducedMotion: boolean,
+): void {
+  const texture: FogTexture = fog.texture;
+  if (texture === 'none') return;
+  // The texture lives in the upper band only, clear of the caption band.
+  const topH = H * (1 - 0.18);
+  // A few shapes, more when denser; at least one so the texture always reads.
+  const count = 2 + Math.round(fog.textureDensity * 4);
+  const alpha = Math.min(1, fog.opacity * 1.4);
+  const colour = `rgba(${FOG_RGB},${alpha.toFixed(3)})`;
+
+  ctx.save();
+  ctx.fillStyle = colour;
+  ctx.globalAlpha = 1;
+
+  // Draw a rect clamped to the band [bandX, bandX+bandW] so no texture shape
+  // ever reaches the central 60% of the frame (Req 6.5).
+  const bandEnd = bandX + bandW;
+  const bandRect = (x: number, y: number, w: number, h: number) => {
+    const x0 = Math.max(bandX, x);
+    const x1 = Math.min(bandEnd, x + w);
+    if (x1 <= x0) return;
+    ctx.fillRect(x0, y, x1 - x0, h);
+  };
+
+  for (let i = 0; i < count; i++) {
+    // A per-shape base position spread across the band and height.
+    const fracX = (i + 0.5) / count;
+    const fracY = ((i * 0.37) % 1);
+    const baseX = bandX + fracX * bandW;
+    const baseY = fracY * topH;
+
+    if (texture === 'windStreaks') {
+      // Soft horizontal streaks drifting across the band.
+      const drift = reducedMotion ? 0 : ((time * 40 + i * 30) % bandW);
+      const x = bandX + ((fracX * bandW + drift) % bandW);
+      const w = bandW * 0.5;
+      const h = Math.max(2, H * 0.012);
+      bandRect(x, baseY, w, h);
+    } else if (texture === 'rainStreaks') {
+      // Thin falling streaks.
+      const fall = reducedMotion ? 0 : ((time * 120 + i * 50) % topH);
+      const y = (baseY + fall) % topH;
+      const w = Math.max(1, bandW * 0.02);
+      const h = H * 0.06;
+      bandRect(baseX, y, w, h);
+    } else if (texture === 'thunderSwell') {
+      // One slow edge swell: a single broad bar whose width breathes slowly,
+      // never a flash (Req 10.3). Only one shape regardless of density.
+      if (i > 0) continue;
+      const swell = reducedMotion ? 0.6 : 0.6 + 0.3 * Math.sin(2 * Math.PI * 0.2 * time);
+      bandRect(bandX, 0, bandW * swell, topH);
+    } else if (texture === 'notesTense' || texture === 'notesCalm') {
+      // A few note shapes drifting slowly; tense drifts faster and sharper.
+      const speed = texture === 'notesTense' ? 50 : 22;
+      const size = (texture === 'notesTense' ? 0.05 : 0.07) * H;
+      const drift = reducedMotion ? 0 : ((time * speed + i * 40) % topH);
+      const y = (baseY + drift) % topH;
+      // Note head (square) with a stem.
+      bandRect(baseX, y, size, size);
+      bandRect(baseX + size * 0.8, y - size, Math.max(1, size * 0.15), size * 1.2);
+    }
+  }
+  ctx.restore();
+}
+
+/**
+ * Draw an ambient event's family sprite inside its fog band at reduced size
+ * (task 18.3): the PNG when loaded, else the Path2D silhouette fallback (task
+ * 16.5), both at the fog's opacity. Centred at (cx, cy) in a box of side
+ * `2*radius`.
+ */
+function drawAmbientSprite(
+  ctx: Ctx2D,
+  family: Family,
+  cx: number,
+  cy: number,
+  radius: number,
+  opacity: number,
+  loader: SpriteImageLoader,
+): void {
+  const entry = loader.load(family);
+  if (entry.loaded && entry.image) {
+    ctx.save();
+    ctx.globalAlpha = clamp01(opacity) * 0.95;
+    const side = radius * 2;
+    ctx.drawImage(entry.image, cx - radius, cy - radius, side, side);
+    ctx.restore();
+    return;
+  }
+  const path = familyPaths()[family];
+  if (!path) return;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(radius, radius);
+  ctx.globalAlpha = clamp01(opacity) * 0.92;
+  ctx.fillStyle = `rgba(${FOG_RGB},0.95)`;
+  ctx.fill(path);
+  ctx.restore();
 }
 
 /** Horizontal anchor (device px) for an edge fog's label. */

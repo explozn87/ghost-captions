@@ -108,15 +108,19 @@ describe('shared types (task 2.1)', () => {
     expect(s.label.length).toBeGreaterThan(0);
   });
 
-  it('EdgeFog carries an edge, opacity and a text label (task 16.3)', () => {
+  it('EdgeFog carries an edge, opacity, label, texture and density (tasks 16.3, 18.2)', () => {
     const f: EdgeFog = {
       family: 'thunder',
       edge: 'all',
       opacity: 0.3,
       label: 'thunder',
+      texture: 'thunderSwell',
+      textureDensity: 0.5,
     };
     expectTypeOf<EdgeFog['edge']>().toEqualTypeOf<FogEdge>();
     expectTypeOf<FogEdge>().toEqualTypeOf<'left' | 'right' | 'all'>();
     expect(f.label.length).toBeGreaterThan(0);
+    expect(f.texture).toBe('thunderSwell');
+    expect(f.textureDensity).toBeGreaterThanOrEqual(0);
   });
 });

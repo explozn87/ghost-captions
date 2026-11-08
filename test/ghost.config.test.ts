@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ghostConfig, isAmbientFamily, type Tuned } from '../src/config/ghost.config.ts';
+import { ghostConfig, isAmbientFamily, ambientTextureOf, type Tuned } from '../src/config/ghost.config.ts';
 import type { Family } from '../src/shared/types.ts';
 
 // Task 2.2: every threshold, prior and weight lives in one module and carries a
@@ -140,5 +140,44 @@ describe('ghost.config (task 2.2)', () => {
     for (const f of ['singing', 'laughter', 'crying', 'siren', 'animal', 'fire', 'unknown'] as Family[]) {
       expect(kinds[f]).toBe('hover');
     }
+  });
+});
+
+
+describe('ghost.config: visible fog and ambient texture (task 18)', () => {
+  it('carries a visible-fog floor with a why, at least 0.30 and below the cap (task 18.1)', () => {
+    expectHasWhy(ghostConfig.edgeFogMinVisible);
+    expect(ghostConfig.edgeFogMinVisible.value).toBeGreaterThanOrEqual(0.3);
+    expect(ghostConfig.edgeFogMinVisible.value).toBeLessThan(ghostConfig.edgeFogMaxOpacity.value);
+  });
+
+  it('expresses attack and release as per-second rates (task 18.1)', () => {
+    // Per-second rates are O(1)-O(10), not the tiny per-frame values (~0.1).
+    expect(ghostConfig.edgeFogAttack.value).toBeGreaterThan(0.5);
+    expect(ghostConfig.edgeFogRelease.value).toBeGreaterThan(0);
+    expect(ghostConfig.edgeFogAttack.value).toBeGreaterThan(ghostConfig.edgeFogRelease.value);
+    expect(ghostConfig.edgeFogAttack.why).toMatch(/per second/i);
+    expect(ghostConfig.edgeFogRelease.why).toMatch(/per second/i);
+  });
+
+  it('gives each ambient family a distinct texture and every point family none (task 18.2)', () => {
+    expect(ghostConfig.ambientTexture.why.trim().length).toBeGreaterThan(0);
+    const expected: Partial<Record<Family, string>> = {
+      wind: 'windStreaks',
+      rain: 'rainStreaks',
+      thunder: 'thunderSwell',
+      tenseMusic: 'notesTense',
+      calmMusic: 'notesCalm',
+    };
+    for (const fam of ALL_FAMILIES) {
+      if (isAmbientFamily(fam)) {
+        expect(ambientTextureOf(fam)).toBe(expected[fam]);
+      } else {
+        expect(ambientTextureOf(fam)).toBe('none');
+      }
+    }
+    // The five ambient textures are all different.
+    const ambientTextures = ALL_FAMILIES.filter((f) => isAmbientFamily(f)).map((f) => ambientTextureOf(f));
+    expect(new Set(ambientTextures).size).toBe(5);
   });
 });
