@@ -765,6 +765,85 @@ export function Player({
           onDoubleClick={canFullscreen ? toggleFullscreen : undefined}
         />
         <canvas ref={canvasRef} className="player__overlay" aria-hidden="true" />
+
+        {/* The end card (task 22.5, 23.3) lives INSIDE the stage (task 32.1),
+            not the player, so its `inset: 0` covers exactly the picture (the
+            video + overlay) and leaves the progress bar below it visible and
+            usable, inline and in full screen. Previously it was a child of
+            `.player`, which also holds `.player__progress`, so the card ran
+            35 px past the bottom edge and covered the scrubber. */}
+        {overlayVisible && ended && (
+          <div className="player__endcard" role="status" aria-live="polite">
+            <p className="player__endcard-text">{endCardText}</p>
+            {closingText && (
+              <p className="player__endcard-closing">{closingText}</p>
+            )}
+            <p className="player__endcard-basis">{basisText}</p>
+            {evidence.length > 0 && (
+              <>
+                <h3 className="player__endcard-heading">{strings.ui.missedListHeading}</h3>
+                <ul className="player__endcard-list">
+                  {evidence.map((occ, i) => {
+                    const label = occurrenceNoun(occ, strings, settings.lang);
+                    const isFirstTry = i === firstTryIndex;
+                    return (
+                      <li
+                        key={`${occ.group}-${occ.start}`}
+                        className={`player__endcard-item${
+                          isFirstTry ? ' player__endcard-item--first' : ''
+                        }`}
+                      >
+                        {/* The "Try this first" tag sits on its own line ABOVE
+                            the row, not in the label column (task 28.1):
+                            squeezed next to the Compare button it forced the
+                            Korean label ("총성, 오른쪽에서") to wrap letter by letter
+                            and made the row 169 px tall. */}
+                        {isFirstTry && (
+                          <span className="player__endcard-firsttag">
+                            {strings.ui.tryThisFirst}
+                          </span>
+                        )}
+                        <div className="player__endcard-rowline">
+                          <button
+                            type="button"
+                            className="player__endcard-row"
+                            onClick={() => seekToOccurrence(occ.start)}
+                          >
+                            <span className="player__endcard-time">{occurrenceTimeLabel(occ)}</span>
+                            <img
+                              className="player__endcard-sprite"
+                              src={spriteImageUrl(occ.family)}
+                              alt=""
+                              aria-hidden="true"
+                              width={20}
+                              height={20}
+                            />
+                            <span className="player__endcard-label">{label}</span>
+                          </button>
+                          <button
+                            type="button"
+                            ref={isFirstTry ? primaryCompareRef : undefined}
+                            className={`player__endcard-compare${
+                              isFirstTry ? ' player__endcard-compare--primary' : ''
+                            }`}
+                            onClick={() => startCompare(occ.start, label)}
+                          >
+                            {isFirstTry
+                              ? `\u25B6 ${strings.ui.compareFirst}`
+                              : strings.ui.compare}
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+            <button type="button" className="player__endcard-again" onClick={watchAgain}>
+              {strings.ui.watchAgain}
+            </button>
+          </div>
+        )}
       </div>
       {canFullscreen && (
         <button
@@ -831,79 +910,6 @@ export function Player({
           {flash && <span className="player__missed-plus">{plusOneText}</span>}
         </div>
       )}
-      {overlayVisible && ended && (
-        <div className="player__endcard" role="status" aria-live="polite">
-          <p className="player__endcard-text">{endCardText}</p>
-          {closingText && (
-            <p className="player__endcard-closing">{closingText}</p>
-          )}
-          <p className="player__endcard-basis">{basisText}</p>
-          {evidence.length > 0 && (
-            <>
-              <h3 className="player__endcard-heading">{strings.ui.missedListHeading}</h3>
-              <ul className="player__endcard-list">
-                {evidence.map((occ, i) => {
-                  const label = occurrenceNoun(occ, strings, settings.lang);
-                  const isFirstTry = i === firstTryIndex;
-                  return (
-                    <li
-                      key={`${occ.group}-${occ.start}`}
-                      className={`player__endcard-item${
-                        isFirstTry ? ' player__endcard-item--first' : ''
-                      }`}
-                    >
-                      {/* The "Try this first" tag sits on its own line ABOVE the
-                          row, not in the label column (task 28.1): squeezed next
-                          to the Compare button it forced the Korean label
-                          ("총성, 오른쪽에서") to wrap letter by letter and made the
-                          row 169 px tall. */}
-                      {isFirstTry && (
-                        <span className="player__endcard-firsttag">
-                          {strings.ui.tryThisFirst}
-                        </span>
-                      )}
-                      <div className="player__endcard-rowline">
-                        <button
-                          type="button"
-                          className="player__endcard-row"
-                          onClick={() => seekToOccurrence(occ.start)}
-                        >
-                          <span className="player__endcard-time">{occurrenceTimeLabel(occ)}</span>
-                          <img
-                            className="player__endcard-sprite"
-                            src={spriteImageUrl(occ.family)}
-                            alt=""
-                            aria-hidden="true"
-                            width={20}
-                            height={20}
-                          />
-                          <span className="player__endcard-label">{label}</span>
-                        </button>
-                        <button
-                          type="button"
-                          ref={isFirstTry ? primaryCompareRef : undefined}
-                          className={`player__endcard-compare${
-                            isFirstTry ? ' player__endcard-compare--primary' : ''
-                          }`}
-                          onClick={() => startCompare(occ.start, label)}
-                        >
-                          {isFirstTry
-                            ? `\u25B6 ${strings.ui.compareFirst}`
-                            : strings.ui.compare}
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
-          <button type="button" className="player__endcard-again" onClick={watchAgain}>
-            {strings.ui.watchAgain}
-          </button>
-        </div>
-      )}
-
       {/* The app's own controls (tasks 28.4, 29.2). The native <video>
           controls are hidden so only the trimmed time shows; the player keeps
           its own play/pause button, a keyboard-seekable slider and a time

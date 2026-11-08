@@ -858,3 +858,55 @@ describe('Player end card fits the box on small screens (task 31.1)', () => {
     expect(card!.querySelector(':scope > .player__endcard-again')).not.toBeNull();
   });
 });
+
+// --- Task 32: the end card covers the picture only --------------------------
+
+describe('Player end card covers the picture only (task 32.1)', () => {
+  it('renders the end card inside .player__stage, not directly in .player', () => {
+    const strings = t('en');
+    const { container } = render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    const card = container.querySelector('.player__endcard');
+    expect(card).not.toBeNull();
+    // The card is a descendant of the stage (the element holding the video and
+    // the overlay canvas), so its `inset: 0` equals the picture and the
+    // progress bar below stays visible (task 32.1).
+    const stage = container.querySelector('.player__stage');
+    expect(stage).not.toBeNull();
+    expect(stage!.contains(card)).toBe(true);
+    // It is NOT a direct child of .player (where it used to sit alongside the
+    // progress bar and so covered it).
+    const player = container.querySelector('.player');
+    expect(card!.closest('.player__stage')).toBe(stage);
+    expect(player!.querySelector(':scope > .player__endcard')).toBeNull();
+  });
+
+  it('keeps the progress bar as a sibling of the stage, outside the end card', () => {
+    const strings = t('en');
+    const { container } = render(
+      <Player src="blob:mock" track={soundTrack} settings={settingsWith('auto')} strings={strings} />,
+    );
+    const video = getVideo();
+    setTime(video, 10);
+    fireEnded(video);
+    // The progress strip is not inside the stage (and so not inside the card),
+    // so the end card never covers it.
+    const stage = container.querySelector('.player__stage');
+    const progress = container.querySelector('.player__progress');
+    expect(stage).not.toBeNull();
+    expect(progress).not.toBeNull();
+    expect(stage!.contains(progress)).toBe(false);
+  });
+
+  it('CSS: the stage is a positioned ancestor so the card inset is the picture', () => {
+    // The end card is `position: absolute; inset: 0`; it must resolve against
+    // the stage, which is `position: relative`, so inset 0 equals the picture
+    // box rather than the whole player (task 32.1).
+    expect(cssBlock('.player__stage')).toMatch(/position:\s*relative/);
+    expect(cssBlock('.player__endcard')).toMatch(/inset:\s*0/);
+  });
+});

@@ -69,14 +69,17 @@ a { color: var(--accent); }
 .player__missed--pulse { animation: missed-pulse .4s ease; }
 @keyframes missed-pulse { 0% { transform: scale(1); } 50% { transform: scale(1.12); } 100% { transform: scale(1); } }
 
-/* Centred end card shown when the video finishes (task 22.5, 23.3). The card
-   always fits the player (task 27.4, 31.1): a flex column bounded to the player
-   box (max-height: 100%, box-sizing: border-box, inner padding top/bottom ≥
-   12 px) with the evidence list the only scroll area and "Watch again" pinned
-   below it, so at 1366×768 and 1280×720 nothing runs past the bottom edge and
-   the headline's first line never touches the top. The fixed items (headline,
-   basis, "Watch again") keep their size; the list takes the remaining height
-   and shrinks to fit (task 31.1). */
+/* Centred end card shown when the video finishes (task 22.5, 23.3). It lives
+   inside `.player__stage` (task 32.1), which is `position: relative`, so its
+   `inset: 0` covers exactly the picture (video + overlay) and leaves the
+   progress bar below it visible — it no longer runs 35 px past the bottom edge
+   over the scrubber. The card always fits the player (task 27.4, 31.1): a flex
+   column bounded to the stage box (max-height: 100%, box-sizing: border-box,
+   inner padding top/bottom ≥ 12 px) with the evidence list the only scroll area
+   and "Watch again" pinned below it, so at 1366×768 and 1280×720 nothing runs
+   past the bottom edge and the headline's first line never touches the top. The
+   fixed items (headline, basis, "Watch again") keep their size; the list takes
+   the remaining height and shrinks to fit (task 31.1). */
 .player__endcard { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 10px; text-align: center; box-sizing: border-box;
   background: rgba(10,12,18,.72); padding: 16px 24px; line-height: 1.4; max-height: 100%; overflow: hidden; }
