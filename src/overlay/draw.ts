@@ -52,6 +52,12 @@ export interface Ctx2D {
   drawImage(image: CanvasImageSource, dx: number, dy: number, dw: number, dh: number): void;
   measureText(text: string): { width: number };
   fillText(text: string, x: number, y: number): void;
+  /**
+   * Stroke outlined text (task 38.1). Used only for the dialogue subtitles,
+   * which take the US-streaming look: a black outline is stroked under white
+   * fill text instead of a background plate.
+   */
+  strokeText(text: string, x: number, y: number): void;
   createRadialGradient(
     x0: number,
     y0: number,
@@ -71,6 +77,17 @@ export interface Ctx2D {
   font: string;
   textAlign: string;
   textBaseline: string;
+  /** Stroke colour for outlined dialogue text (task 38.1). */
+  strokeStyle: string;
+  /** Stroke width for outlined dialogue text (task 38.1). */
+  lineWidth: number;
+  /** Line join for the dialogue outline (`'round'`, task 38.1). */
+  lineJoin: string;
+  /** Drop-shadow properties for the dialogue text (task 38.1). */
+  shadowColor: string;
+  shadowBlur: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
 }
 
 /**
@@ -1405,7 +1422,10 @@ function drawLabelAt(ctx: Ctx2D, label: string, rect: LabelRect, opacity: number
   ctx.fillStyle = 'rgba(8,10,16,0.94)';
   ctx.fillRect(plateX, plateY, rect.w, rect.h);
 
-  ctx.fillStyle = 'rgba(240,242,248,1)';
+  // Lavender text (task 38.2) so a sound label never looks like the white
+  // dialogue subtitles. The colour comes from config and keeps AA contrast on
+  // the dark plate (a test computes it).
+  ctx.fillStyle = ghostConfig.soundLabelColor.value;
   ctx.fillText(label, rect.x, plateY + LABEL_PAD_Y);
   ctx.restore();
 }
@@ -1429,6 +1449,17 @@ const DIALOGUE_PAD_Y = 8;
 const DIALOGUE_BOTTOM_FRAC = 0.03;
 /** At most two lines are shown (task 19.2). */
 const DIALOGUE_MAX_LINES = 2;
+
+/**
+ * Dialogue outline width as a fraction of the font size (task 38.1): the
+ * US-streaming subtitle look strokes a black outline under the white text
+ * (≈ 0.12 × font px) instead of a background plate, so the words read on any
+ * frame without a box. A soft black drop shadow (below) backs it up on bright
+ * scenes.
+ */
+const DIALOGUE_OUTLINE_FACTOR = 0.12;
+/** Dialogue drop-shadow blur as a fraction of the font size (task 38.1). */
+const DIALOGUE_SHADOW_BLUR_FACTOR = 0.18;
 
 /** The line height (device px) for a dialogue font of `fontPx` (task 36.1). */
 function dialogueLinePx(fontPx: number): number {
@@ -1518,11 +1549,20 @@ export function measureDialogueBandFrac(
 }
 
 /**
- * Draw the active dialogue cue in the bottom caption band (task 19.2): white
- * text on a dark plate at AA contrast (Req 10.2), centred horizontally, at most
- * two lines (longer cues wrap then ellipsis). The plate sits just above the
- * bottom edge. Ghosts, labels and edge fog are kept out of this band by the
- * caller passing the measured band fraction to `layout`/`draw`.
+ * Draw the active dialogue cue in the bottom caption band (task 19.2, restyled
+ * in task 38.1): the common US streaming subtitle look — white sans-serif text,
+ * centred at the bottom, at most two lines, with NO background plate, a black
+ * outline (≈ 0.12 × font px, round joins) and a soft black drop shadow so it
+ * stays readable on bright frames (as in the Netflix Timed Text Style Guide for
+ * English (USA)). The plain white look is deliberately distinct from the
+ * lavender-on-dark-plate sound labels (task 38.2), so a viewer can never
+ * mistake a spoken line for a sound name (owner feedback 2026-11-09).
+ *
+ * The font, wrapping, two-line limit, bottom margin and the dialogue-band
+ * measurement ({@link measureDialogueBandFrac}) are unchanged, so layout keeps
+ * ghosts out of the band exactly as before. Ghosts, labels and edge fog are
+ * kept out of this band by the caller passing the measured band fraction to
+ * `layout`/`draw`.
  */
 function drawDialogue(ctx: Ctx2D, text: string, W: number, H: number): void {
   const fontPx = dialogueFontPx(H);
@@ -1535,24 +1575,33 @@ function drawDialogue(ctx: Ctx2D, text: string, W: number, H: number): void {
   ctx.font = `${fontPx}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-
-  let widest = 0;
-  for (const line of lines) {
-    const w = ctx.measureText(line).width;
-    if (w > widest) widest = w;
-  }
-  const plateW = widest + DIALOGUE_PAD_X * 2;
-  const plateH = lines.length * linePx + DIALOGUE_PAD_Y * 2;
-  const plateX = W / 2 - plateW / 2;
-  const plateY = H - plateH - H * DIALOGUE_BOTTOM_FRAC;
-
   ctx.globalAlpha = 1;
-  ctx.fillStyle = 'rgba(10,12,18,0.82)';
-  ctx.fillRect(plateX, plateY, plateW, plateH);
 
-  ctx.fillStyle = 'rgba(245,247,252,1)';
+  // The text block occupies the same vertical span as before (plate height
+  // minus its padding), so the bottom margin and band measurement are
+  // unchanged (task 38.1 keeps measureDialogueBandFrac identical). We simply
+  // paint no plate; the first text line sits where the plate's padded top used
+  // to be.
+  const plateH = lines.length * linePx + DIALOGUE_PAD_Y * 2;
+  const plateY = H - plateH - H * DIALOGUE_BOTTOM_FRAC;
+  const firstLineY = plateY + DIALOGUE_PAD_Y;
+
+  // A soft black drop shadow plus a black outline stand in for the plate, so
+  // the white text reads on bright frames too (task 38.1).
+  ctx.shadowColor = 'rgba(0,0,0,0.85)';
+  ctx.shadowBlur = Math.max(1, fontPx * DIALOGUE_SHADOW_BLUR_FACTOR);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = Math.max(1, Math.round(fontPx * 0.04));
+  ctx.strokeStyle = 'rgba(0,0,0,1)';
+  ctx.lineWidth = Math.max(1, fontPx * DIALOGUE_OUTLINE_FACTOR);
+  ctx.lineJoin = 'round';
+
   lines.forEach((line, i) => {
-    ctx.fillText(line, W / 2, plateY + DIALOGUE_PAD_Y + i * linePx);
+    const y = firstLineY + i * linePx;
+    // Stroke the black outline first, then the white fill on top (task 38.1).
+    ctx.strokeText(line, W / 2, y);
+    ctx.fillStyle = 'rgba(255,255,255,1)';
+    ctx.fillText(line, W / 2, y);
   });
   ctx.restore();
 }

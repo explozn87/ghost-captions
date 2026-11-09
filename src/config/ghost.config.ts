@@ -226,6 +226,15 @@ export interface GhostConfig {
    * not a wheeled vehicle.
    */
   spriteOverrideByLabel: { value: Record<string, string>; why: string };
+  /**
+   * The text colour for every overlay sound label (task 38.2): a lavender
+   * (`#b9b3ff`) that sets the sound names apart from the white dialogue
+   * subtitles, so a viewer can never mistake a sound caption for a spoken line.
+   * Drawn on the dark label plate (`rgba(8,10,16,0.94)`), so its contrast stays
+   * at or above WCAG AA 4.5:1 (Req 10.2) — a test computes it. The folded
+   * corner chip uses the same colour.
+   */
+  soundLabelColor: { value: string; why: string };
 }
 
 /**
@@ -494,6 +503,10 @@ export const ghostConfig = {
       Helicopter: '/ghosts/helicopter.png',
     },
     why: 'The picture must match the name (task 36.3). The Helicopter class maps to the `vehicle` family (so counts, list and export treat it like other vehicles), but a wheeled-car ghost next to the label "Helicopter" reads as wrong. This override draws the helicopter sprite for that specific label only; a missing/not-yet-loaded override falls back to a built-in rotor silhouette (not the car). Keyed by the English display_name on SoundEvent.topLabel.',
+  },
+  soundLabelColor: {
+    value: '#b9b3ff',
+    why: 'Sound names must never look like dialogue (task 38.2). The dialogue subtitles use the plain US-streaming look — white text, no plate — so the sound labels keep their dark plate and are drawn in this lavender instead of white, making the two instantly distinguishable (owner feedback 2026-11-09: "I can\'t tell which is which"). #b9b3ff on the dark plate rgba(8,10,16,0.94) has a contrast ratio of ~9:1, well above WCAG AA 4.5:1 (Req 10.2); a test computes it. The folded corner chip uses the same colour.',
   },
 } satisfies GhostConfig;
 

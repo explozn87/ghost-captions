@@ -56,6 +56,13 @@ function makeFakeCtx(width = 1000, height = 1000): Ctx2D & { calls: Call[] } {
     font: '',
     textAlign: '',
     textBaseline: '',
+    strokeStyle: '#000',
+    lineWidth: 1,
+    lineJoin: '',
+    shadowColor: '',
+    shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
     save() { calls.push(rec('save', [])); },
     restore() { calls.push(rec('restore', [])); },
     translate(x, y) { calls.push(rec('translate', [x, y])); },
@@ -67,6 +74,7 @@ function makeFakeCtx(width = 1000, height = 1000): Ctx2D & { calls: Call[] } {
     drawImage(image, dx, dy, dw, dh) { calls.push(rec('drawImage', [image, dx, dy, dw, dh])); },
     measureText(text) { return { width: text.length * 8 }; },
     fillText(text, x, y) { calls.push(rec('fillText', [text, x, y])); },
+    strokeText(text, x, y) { calls.push(rec('strokeText', [text, x, y])); },
     createRadialGradient() {
       return { addColorStop() {} };
     },
@@ -243,8 +251,8 @@ describe('draw: edge fog for ambient events (task 16.3)', () => {
   });
 });
 
-describe('draw: label backing plate for contrast (task 8.2, Req 10.2, 25.4)', () => {
-  it('draws a dark plate then light text for each label', () => {
+describe('draw: label backing plate for contrast (task 8.2, Req 10.2, 25.4, 38.2)', () => {
+  it('draws a dark plate then lavender text for each label (task 38.2)', () => {
     const ctx = makeFakeCtx();
     draw(ctx, [sprite({ label: 'glass' })], [], 0, false, { loader: silhouetteOnlyLoader });
     const plate = ctx.calls.find(
@@ -253,7 +261,9 @@ describe('draw: label backing plate for contrast (task 8.2, Req 10.2, 25.4)', ()
     const text = ctx.calls.find((c) => c.op === 'fillText');
     expect(plate).toBeDefined();
     expect(text).toBeDefined();
-    expect(typeof text!.fillStyle === 'string' && text!.fillStyle.includes('240,242,248')).toBe(true);
+    // The sound label text is the lavender soundLabelColor, not white — so it
+    // can never be mistaken for the white dialogue subtitles (task 38.2).
+    expect(text!.fillStyle).toBe(ghostConfig.soundLabelColor.value);
     expect(text!.globalAlpha).toBe(1);
   });
 
@@ -588,26 +598,44 @@ describe('draw: ambient event shows its family sprite and label (task 18.3)', ()
 // Task 19.2: dialogue subtitles in the bottom caption band.
 // ---------------------------------------------------------------------------
 
-describe('draw: dialogue subtitle in the caption band (task 19.2)', () => {
-  it('draws the dialogue text on a dark plate when a cue is passed', () => {
+describe('draw: dialogue subtitle in the caption band (task 19.2, restyled 38.1)', () => {
+  it('draws the dialogue text with a black outline then white fill, no plate (task 38.1)', () => {
     const ctx = makeFakeCtx(800, 600);
     draw(ctx, [], [], 0, false, { loader: silhouetteOnlyLoader, dialogue: 'Who is there?' });
-    const texts = ctx.calls.filter((c) => c.op === 'fillText').map((c) => c.args[0]);
-    expect(texts).toContain('Who is there?');
-    // A dark plate (near-opaque) sits behind it for AA contrast (Req 10.2).
-    const plate = ctx.calls.find(
+    // The dialogue is stroked (outline) then filled white, with NO background
+    // plate (the US-streaming look, task 38.1).
+    const strokes = ctx.calls.filter((c) => c.op === 'strokeText' && c.args[0] === 'Who is there?');
+    const fills = ctx.calls.filter((c) => c.op === 'fillText' && c.args[0] === 'Who is there?');
+    expect(strokes).toHaveLength(1);
+    expect(fills).toHaveLength(1);
+    // White fill text.
+    expect(typeof fills[0]!.fillStyle === 'string' && fills[0]!.fillStyle.includes('255,255,255')).toBe(true);
+    // No dark dialogue plate is painted (the old rgba(10,12,18,...) plate is gone).
+    const oldPlate = ctx.calls.find(
       (c) => c.op === 'fillRect' && typeof c.fillStyle === 'string' && c.fillStyle.includes('10,12,18'),
     );
-    expect(plate).toBeDefined();
+    expect(oldPlate).toBeUndefined();
+    // No fillRect at all is produced for a dialogue-only frame.
+    expect(ctx.calls.filter((c) => c.op === 'fillRect')).toHaveLength(0);
+  });
+
+  it('strokes the outline before filling the white text (task 38.1)', () => {
+    const ctx = makeFakeCtx(800, 600);
+    draw(ctx, [], [], 0, false, { loader: silhouetteOnlyLoader, dialogue: 'A line.' });
+    const strokeIdx = ctx.calls.findIndex((c) => c.op === 'strokeText' && c.args[0] === 'A line.');
+    const fillIdx = ctx.calls.findIndex((c) => c.op === 'fillText' && c.args[0] === 'A line.');
+    expect(strokeIdx).toBeGreaterThanOrEqual(0);
+    expect(fillIdx).toBeGreaterThan(strokeIdx);
   });
 
   it('draws nothing extra when no dialogue cue is active', () => {
     const ctx = makeFakeCtx(800, 600);
     draw(ctx, [], [], 0, false, { loader: silhouetteOnlyLoader, dialogue: null });
     expect(ctx.calls.filter((c) => c.op === 'fillText')).toHaveLength(0);
+    expect(ctx.calls.filter((c) => c.op === 'strokeText')).toHaveLength(0);
   });
 
-  it('places the dialogue plate within the bottom caption band', () => {
+  it('places the dialogue text within the bottom caption band', () => {
     const H = 600;
     const ctx = makeFakeCtx(800, H);
     draw(ctx, [], [], 0, false, { loader: silhouetteOnlyLoader, dialogue: 'A line.' });
