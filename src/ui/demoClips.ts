@@ -84,22 +84,22 @@ export interface DemoClip {
  */
 export const DEMO_CLIPS: readonly DemoClip[] = [
   {
-    id: 'tears-of-steel-0658',
-    title: 'Tears of Steel (00:06:58–00:07:23 excerpt, with official subtitles)',
+    id: 'tears-of-steel-0807',
+    title: 'Tears of Steel (00:08:07–00:08:32 excerpt, with official subtitles)',
     author: 'Blender Foundation',
     licence: 'CC-BY-3',
     sourceUrl: 'https://mango.blender.org/',
-    src: '/demo/tos-0658.webm',
+    src: '/demo/tos-0807.webm',
     mime: 'video/webm',
     note: 'Dialogue the captions read, plus the sounds between the lines the ghosts read.',
     // This clip shows the core idea best — official dialogue subtitles alongside
     // the ghosts — so it goes first in the picker (task 35.1). The 25 s excerpt
     // is the whole file, so it carries no endAt.
-    subtitles: '/demo/tos-0658.en.vtt',
+    subtitles: '/demo/tos-0807.en.vtt',
     // CC BY 3.0 §4(b): attribution plus a statement of the changes made
     // (task 35.2). No wording that implies Blender endorses the app.
     attribution:
-      'Tears of Steel (2012) — (CC) Blender Foundation | mango.blender.org — CC BY 3.0. Excerpt 00:06:58\u201300:07:23; subtitles re-timed and converted; Ghost Captions overlay added.',
+      'Tears of Steel (2012) — (CC) Blender Foundation | mango.blender.org — CC BY 3.0. Excerpt 00:08:07\u201300:08:32; subtitles re-timed and converted; Ghost Captions overlay added.',
   },
   {
     id: 'sintel-trailer',

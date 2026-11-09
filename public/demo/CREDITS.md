@@ -7,7 +7,7 @@ attribution is shown in the app's demo picker and while a clip plays.
 
 | File | Title | Author | Licence | Source |
 | --- | --- | --- | --- | --- |
-| `tos-0658.webm`, `tos-0658.en.vtt` | Tears of Steel (00:06:58–00:07:23 excerpt, with official subtitles) | Blender Foundation | CC BY 3.0 | https://mango.blender.org/ |
+| `tos-0807.webm`, `tos-0807.en.vtt` | Tears of Steel (00:08:07–00:08:32 excerpt, with official subtitles) | Blender Foundation | CC BY 3.0 | https://mango.blender.org/ |
 | `sintel-trailer.webm` | Sintel (trailer) | Blender Foundation | CC BY 3.0 | https://durian.blender.org/ |
 | `highway-field.ogg` | Highway from a bridge (field recording) | Wikimedia Commons contributor | Public domain | https://commons.wikimedia.org/wiki/File:Highway_from_bridge_center.ogg |
 
@@ -15,8 +15,8 @@ attribution is shown in the app's demo picker and while a clip plays.
 
 - **Tears of Steel (excerpt, with subtitles)** is the clip that shows the core
   idea best: its official English subtitles read the spoken words while the
-  ghosts read the sounds between the lines (a vehicle, a helicopter, music, a
-  volley of fire). It goes first in the picker.
+  ghosts read the sounds the words leave out (a crash, a helicopter, shattering
+  glass, a vehicle roaring under a shout). It goes first in the picker.
 
 - **Sintel (trailer)** is a real film with a mixed soundtrack. It is the honest
   case the write-up leans on: on a mixed soundtrack, direction is often unknown,
@@ -33,11 +33,11 @@ attribution is shown in the app's demo picker and while a clip plays.
   [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Attribution and the
   statement of changes are shown on the source line while the clip plays:
   "Tears of Steel (2012) — (CC) Blender Foundation | mango.blender.org — CC BY
-  3.0. Excerpt 00:06:58–00:07:23; subtitles re-timed and converted; Ghost
+  3.0. Excerpt 00:08:07–00:08:32; subtitles re-timed and converted; Ghost
   Captions overlay added." The subtitles are the official English subtitles
   ([TOS-en.srt](https://download.blender.org/demo/movies/ToS/subtitles/TOS-en.srt),
   licence terms at [mango.blender.org/sharing](https://mango.blender.org/sharing/))
-  cut to this range, shifted by −418 s and converted from SRT to WebVTT. Only
+  cut to this range, shifted by −487 s and converted from SRT to WebVTT. Only
   the film's own mixed audio is used; the separate original soundtrack files
   (CC BY-ND 3.0) are **not** used. No endorsement by Blender is implied.
 - **CC BY 3.0** (Sintel): attribution is given above and in the app (title,
