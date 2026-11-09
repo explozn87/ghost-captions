@@ -103,8 +103,26 @@ export interface SoundEvent {
   start: number;
   end: number;
   family: Family;
-  /** True for speech events, which are shown as a small marker, never a ghost. */
+  /**
+   * True only for a speech-only MARKER event (spoken words with no sound family
+   * above threshold). Such events are shown as a small marker, never a ghost,
+   * and are dropped by every consumer (overlay, counter, timeline, export).
+   *
+   * A sound family heard WHILE someone is talking is NOT a speech event: it is
+   * a normal family event with {@link overSpeech} set, so a gunshot, door or
+   * vehicle under dialogue is still a ghost (task 37.1). The two flags are
+   * mutually exclusive: a family event has `isSpeech:false` even when speech was
+   * also present in its windows.
+   */
   isSpeech: boolean;
+  /**
+   * True when this family event was heard with speech above threshold in at
+   * least one of its windows (task 37.1). It is still a full ghost — drawn,
+   * counted, listed and exported like any other — but the overlay keeps it out
+   * of the dialogue caption band (task 19 rule, task 37.2). `false` for a sound
+   * heard with no concurrent speech, and for speech-only marker events.
+   */
+  overSpeech: boolean;
   /** The classifier's top category name, or null when below the label threshold. */
   topLabel: string | null;
   labelScore: number;

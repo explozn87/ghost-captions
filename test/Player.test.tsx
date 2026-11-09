@@ -25,17 +25,17 @@ const soundTrack: EventTrack = {
   labelsAvailable: true,
   events: [
     {
-      id: 'a', start: 1, end: 2, family: 'gunshot', isSpeech: false,
+      id: 'a', start: 1, end: 2, family: 'gunshot', isSpeech: false, overSpeech: false,
       topLabel: 'Gunshot', labelScore: 0.9, side: 'left', sideTrack: [], sideConfidence: 0.8,
       loudness: 0.9, trend: 'steady', ominous: 0.8, beatPeriod: null,
     },
     {
-      id: 'speech', start: 2, end: 3, family: 'scream', isSpeech: true,
+      id: 'speech', start: 2, end: 3, family: 'scream', isSpeech: true, overSpeech: false,
       topLabel: null, labelScore: 0, side: 'centre-unknown', sideTrack: [], sideConfidence: 0,
       loudness: 0.5, trend: 'steady', ominous: 0.3, beatPeriod: null,
     },
     {
-      id: 'b', start: 4, end: 5, family: 'vehicle', isSpeech: false,
+      id: 'b', start: 4, end: 5, family: 'vehicle', isSpeech: false, overSpeech: false,
       topLabel: 'Car', labelScore: 0.7, side: 'right', sideTrack: [], sideConfidence: 0.7,
       loudness: 0.6, trend: 'steady', ominous: 0.3, beatPeriod: null,
     },
@@ -611,13 +611,13 @@ const trailingMusicTrack: EventTrack = {
   labelsAvailable: true,
   events: [
     {
-      id: 'm1', start: 11, end: 23.3, family: 'calmMusic', isSpeech: false,
+      id: 'm1', start: 11, end: 23.3, family: 'calmMusic', isSpeech: false, overSpeech: false,
       topLabel: 'Music', labelScore: 0.9, side: 'centre-unknown', sideTrack: [], sideConfidence: 0,
       loudness: 0.6, trend: 'steady', ominous: 0.3, beatPeriod: null,
     },
     {
       // A trailing music fragment that STARTS after the trimmed demo end (25 s).
-      id: 'm2', start: 26, end: 40, family: 'calmMusic', isSpeech: false,
+      id: 'm2', start: 26, end: 40, family: 'calmMusic', isSpeech: false, overSpeech: false,
       topLabel: 'Music', labelScore: 0.9, side: 'centre-unknown', sideTrack: [], sideConfidence: 0,
       loudness: 0.6, trend: 'steady', ominous: 0.3, beatPeriod: null,
     },

@@ -18,6 +18,7 @@ function ev(id: string, start: number, family: SoundEvent['family'] = 'gunshot')
     end: start + 1,
     family,
     isSpeech: false,
+    overSpeech: false,
     topLabel: null,
     labelScore: 0,
     side: 'centre-unknown',

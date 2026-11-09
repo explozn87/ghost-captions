@@ -65,6 +65,7 @@ describe('shared types (task 2.1)', () => {
       end: 2,
       family: 'door',
       isSpeech: false,
+      overSpeech: false,
       topLabel: 'Slam',
       labelScore: 0.7,
       side: 'left',

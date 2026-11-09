@@ -123,6 +123,7 @@ function makeEvent(over: Partial<SoundEvent> = {}): SoundEvent {
     end: 2,
     family: 'vehicle',
     isSpeech: false,
+    overSpeech: false,
     topLabel: null,
     labelScore: 0,
     side: 'centre-unknown',

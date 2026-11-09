@@ -41,6 +41,7 @@ function makeEvent(over: Partial<SoundEvent> = {}): SoundEvent {
     end: 2,
     family: 'unknown',
     isSpeech: false,
+    overSpeech: false,
     topLabel: null,
     labelScore: 0,
     side: 'centre-unknown',

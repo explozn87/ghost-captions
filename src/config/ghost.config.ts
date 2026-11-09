@@ -254,7 +254,7 @@ export type AmbientTexture =
 export const ghostConfig = {
   labelThreshold: {
     value: 0.3,
-    why: 'Best category score must reach 0.3 to assign a family; below it the sound is shown as unknown rather than a guessed label (Req 3.5). Matches the 11-08 run where real cues sat at 0.3+ and noise below.',
+    why: 'Best category score must reach 0.3 to assign a family; below it the sound is shown as unknown rather than a guessed label (Req 3.5). Matches the 11-08 run where real cues sat at 0.3+ and noise below. It also governs sounds heard UNDER speech (task 37.3): a gunshot or door under dialogue becomes a ghost only when its own family score clears this same 0.3 — the threshold is never lowered for sounds under speech, so nothing guessed is shown; such a window is simply no longer discarded as "speech".',
   },
   specificLabelThreshold: {
     value: 0.3,

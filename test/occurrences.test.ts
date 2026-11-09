@@ -24,6 +24,7 @@ function ev(over: Partial<SoundEvent> = {}): SoundEvent {
     end: 1,
     family: 'gunshot',
     isSpeech: false,
+    overSpeech: false,
     topLabel: null,
     labelScore: 0,
     side: 'centre-unknown',

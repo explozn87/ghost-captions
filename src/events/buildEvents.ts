@@ -54,6 +54,14 @@ interface WindowLabel {
   kind: WindowKind;
   family: Family;
   isSpeech: boolean;
+  /**
+   * True for a family window that ALSO had speech above threshold (task 37.1).
+   * It stays a `family` window (a real ghost); `overSpeech` only records that
+   * speech was present so the overlay can keep it out of the dialogue band. A
+   * speech-only window (`kind:'speech'`) has `isSpeech:true` and
+   * `overSpeech:false`; an ordinary family window has both false.
+   */
+  overSpeech: boolean;
   /** Top category name once the threshold is cleared, else null. */
   topLabel: string | null;
   labelScore: number;
@@ -73,6 +81,14 @@ const BEAT_MAX_PERIOD = 1.5;
  * unclassified: it is marked `drop` and does NOT become an `unknown` event by
  * default (task 20.1) — the caller promotes it to `unknown` only when it is
  * loud and sudden.
+ *
+ * Task 37.1: a confident family that is heard WHILE speech is also above
+ * threshold is still a `family` window (a real ghost), now with
+ * `overSpeech:true` and `isSpeech:false`. Previously such a window carried
+ * `isSpeech:true`, so every consumer dropped it and a gunshot/door/vehicle
+ * under dialogue — exactly the sounds captions miss — was never shown, counted
+ * or exported. A speech-only window (no competing family) stays a `speech`
+ * marker with `isSpeech:true`.
  */
 function labelWindow(window: ClassWindow, cfg: GhostConfig): WindowLabel {
   const threshold = cfg.labelThreshold.value;
@@ -97,14 +113,17 @@ function labelWindow(window: ClassWindow, cfg: GhostConfig): WindowLabel {
     }
   }
 
-  // A confident ghost family wins outright.
+  // A confident ghost family wins outright. If speech was also present above
+  // threshold the window is still a family window (a real ghost), now flagged
+  // `overSpeech` so the overlay keeps it out of the dialogue band (task 37.1).
   if (best !== null) {
     return {
       start: window.start,
       end: window.end,
       kind: 'family',
       family: best.family,
-      isSpeech: sawSpeech,
+      isSpeech: false,
+      overSpeech: sawSpeech,
       topLabel: best.name,
       labelScore: best.score,
     };
@@ -120,6 +139,7 @@ function labelWindow(window: ClassWindow, cfg: GhostConfig): WindowLabel {
       kind: 'speech',
       family: 'unknown',
       isSpeech: true,
+      overSpeech: false,
       topLabel: null,
       labelScore: 0,
     };
@@ -131,6 +151,7 @@ function labelWindow(window: ClassWindow, cfg: GhostConfig): WindowLabel {
     kind: sawSilence ? 'silence' : 'drop',
     family: 'unknown',
     isSpeech: false,
+    overSpeech: false,
     topLabel: null,
     labelScore: 0,
   };
@@ -180,6 +201,8 @@ interface MergedRun {
   end: number;
   family: Family;
   isSpeech: boolean;
+  /** True when ANY merged window was heard over speech (task 37.1). */
+  overSpeech: boolean;
   topLabel: string | null;
   labelScore: number;
 }
@@ -188,7 +211,9 @@ interface MergedRun {
  * Step 2 — merge consecutive windows that share a family when the gap between
  * them is within `mergeGap` (Req 3.3). Only `family` and `speech` windows make
  * runs; `drop` windows (unclassified, not loud+sudden) and `silence` windows
- * make none.
+ * make none. `sameKind` compares family and `isSpeech` exactly as before, so a
+ * family run is NOT split by speech being present in some of its windows (task
+ * 37.1) — the run's `overSpeech` is simply the OR over its windows.
  *
  * Two refinements for task 20:
  *   - the run's `topLabel` is the single highest-scoring category across ALL
@@ -229,6 +254,9 @@ function mergeRuns(labels: WindowLabel[], cfg: GhostConfig): MergedRun[] {
     const closeEnough = last && (w.start - last.end <= gap || bridgeable);
     if (last && sameKind && closeEnough) {
       last.end = Math.max(last.end, w.end);
+      // A family run is over speech if ANY of its windows was (task 37.1); the
+      // flag never splits a run (it is not part of `sameKind`).
+      last.overSpeech = last.overSpeech || w.overSpeech;
       if (w.labelScore > last.labelScore) {
         last.topLabel = w.topLabel;
         last.labelScore = w.labelScore;
@@ -241,6 +269,7 @@ function mergeRuns(labels: WindowLabel[], cfg: GhostConfig): MergedRun[] {
       end: w.end,
       family: w.family,
       isSpeech: w.isSpeech,
+      overSpeech: w.overSpeech,
       topLabel: w.topLabel,
       labelScore: w.labelScore,
     });
@@ -542,6 +571,7 @@ export function buildEvents(
       end: run.end,
       family: run.family,
       isSpeech: run.isSpeech,
+      overSpeech: run.overSpeech,
       topLabel: run.topLabel,
       labelScore: run.labelScore,
       side,

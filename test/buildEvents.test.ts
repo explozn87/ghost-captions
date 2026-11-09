@@ -6,6 +6,8 @@ import { synthesize } from './synth.ts';
 import sintelWindows from './fixtures/sintel.windows.json';
 import { familyFor } from '../src/events/familyMap.ts';
 import { ghostConfig } from '../src/config/ghost.config.ts';
+import { isShownEvent, missedOccurrences } from '../src/events/occurrences.ts';
+import { toWebVtt } from '../src/export/webvtt.ts';
 import type { ClassWindow, EventTrack, Frame, Family } from '../src/shared/types.ts';
 
 // Task 5.4: the four properties P1–P4 from design.md, plus example tests on the
@@ -569,10 +571,23 @@ describe('buildEvents: Sintel fixture example tests (task 5.4)', () => {
     expect(unknowns.length).toBeLessThanOrEqual(2);
   });
 
-  it('marks the Speech-bearing stretch with isSpeech somewhere', () => {
-    // The trailer has Speech windows around 42 s; a merged speech marker should
-    // exist with isSpeech true.
-    expect(track.events.some((e) => e.isSpeech)).toBe(true);
+  it('shows sounds heard under speech as overSpeech ghosts, not speech markers (task 37.1)', () => {
+    // Every window in this fixture that carries Speech also carries Music above
+    // the label threshold (e.g. 11.7 s Speech 0.33 + Music 0.33; 42.9 s Speech
+    // 0.8 + Music 0.67). Under the OLD rule those became isSpeech events and
+    // were dropped everywhere, hiding the music a muted viewer needs. The NEW
+    // rule (task 37.1) keeps them as music ghosts flagged overSpeech, so they
+    // are shown, counted and exported; no pure-speech marker exists here, so
+    // nothing should be isSpeech.
+    expect(track.events.some((e) => e.isSpeech)).toBe(false);
+    // The music-under-speech stretch is a real, shown family event with
+    // overSpeech set.
+    const underSpeech = track.events.filter((e) => e.overSpeech);
+    expect(underSpeech.length).toBeGreaterThan(0);
+    for (const e of underSpeech) {
+      expect(e.isSpeech).toBe(false);
+      expect(e.family).not.toBe('unknown');
+    }
   });
 });
 
@@ -609,6 +624,7 @@ function mkEvent(id: string, start: number, end: number): EventTrack['events'][n
     end,
     family: 'unknown',
     isSpeech: false,
+    overSpeech: false,
     topLabel: null,
     labelScore: 0,
     side: 'centre-unknown',
@@ -620,3 +636,88 @@ function mkEvent(id: string, start: number, end: number): EventTrack['events'][n
     beatPeriod: null,
   };
 }
+
+// Task 37.4: a sound heard WHILE someone talks is no longer thrown away. A
+// window with both speech and a confident sound family becomes a normal family
+// ghost flagged `overSpeech` (shown, counted, exported), while a speech-only
+// window is still a marker that nobody shows.
+
+describe('buildEvents: sounds under speech are kept (task 37)', () => {
+  const noMute = { mutedFamilies: new Set<Family>() };
+
+  /** One 0.975 s window, built from the given categories. */
+  function oneWindow(categories: { name: string; score: number }[]): ClassWindow[] {
+    return [{ start: 0, end: 0.975, categories }];
+  }
+
+  it('[speech 0.8 + Gunshot 0.6] → one gunshot event, overSpeech, not speech', () => {
+    const win = oneWindow([
+      { name: 'Speech', score: 0.8 },
+      { name: 'Gunshot, gunfire', score: 0.6 },
+    ]);
+    const fs = flatFrames(1.5);
+    const track = buildEvents(win, fs, { duration: 1.5, mono: true, labelsAvailable: true });
+
+    const guns = track.events.filter((e) => e.family === 'gunshot');
+    expect(guns).toHaveLength(1);
+    const e = guns[0]!;
+    expect(e.overSpeech).toBe(true);
+    expect(e.isSpeech).toBe(false);
+    expect(e.topLabel).toBe('Gunshot, gunfire');
+    // No speech-only marker was produced for this window.
+    expect(track.events.some((ev) => ev.isSpeech)).toBe(false);
+  });
+
+  it('an overSpeech gunshot is shown, counted and exported', () => {
+    const win = oneWindow([
+      { name: 'Speech', score: 0.8 },
+      { name: 'Gunshot, gunfire', score: 0.6 },
+    ]);
+    const fs = flatFrames(1.5);
+    const track = buildEvents(win, fs, { duration: 1.5, mono: true, labelsAvailable: true });
+    const e = track.events.find((ev) => ev.family === 'gunshot')!;
+
+    // Shown: isShownEvent only drops speech markers and muted families.
+    expect(isShownEvent(e, noMute.mutedFamilies)).toBe(true);
+    // Counted: it is a missed occurrence against dialogue-only captions.
+    const missed = missedOccurrences(track.events, 1.0, noMute, []);
+    expect(missed.some((occ) => occ.family === 'gunshot')).toBe(true);
+    // Exported: a bracketed sound cue is written for it.
+    const vtt = toWebVtt(track, 'en');
+    expect(vtt).toMatch(/\[[^\]]*gunshot[^\]]*\]/i);
+  });
+
+  it('[speech 0.8 only] → a speech marker that is not shown', () => {
+    const win = oneWindow([{ name: 'Speech', score: 0.8 }]);
+    const fs = flatFrames(1.5);
+    const track = buildEvents(win, fs, { duration: 1.5, mono: true, labelsAvailable: true });
+
+    // The only event is a speech marker (unknown family, isSpeech true).
+    const speechEvents = track.events.filter((ev) => ev.isSpeech);
+    expect(speechEvents).toHaveLength(1);
+    expect(speechEvents[0]!.overSpeech).toBe(false);
+    // Nobody shows it, counts it or exports it.
+    expect(isShownEvent(speechEvents[0]!, noMute.mutedFamilies)).toBe(false);
+    expect(missedOccurrences(track.events, 2.0, noMute, [])).toHaveLength(0);
+    expect(toWebVtt(track, 'en').trim()).toBe('WEBVTT');
+  });
+
+  it('a family run is not split by speech being present in only some windows (task 37.1)', () => {
+    const W = 0.975;
+    // Three consecutive gunshot windows; the middle one also has speech. All
+    // three must still merge into ONE event (speech presence is not part of
+    // sameKind), with overSpeech true because one window was over speech.
+    const windows: ClassWindow[] = [
+      { start: 0, end: W, categories: [{ name: 'Gunshot, gunfire', score: 0.6 }] },
+      { start: W, end: 2 * W, categories: [{ name: 'Speech', score: 0.8 }, { name: 'Gunshot, gunfire', score: 0.6 }] },
+      { start: 2 * W, end: 3 * W, categories: [{ name: 'Gunshot, gunfire', score: 0.6 }] },
+    ];
+    const fs = flatFrames(3 * W + 0.5);
+    const track = buildEvents(windows, fs, { duration: 3 * W + 0.5, mono: true, labelsAvailable: true });
+    const guns = track.events.filter((e) => e.family === 'gunshot');
+    expect(guns).toHaveLength(1);
+    expect(guns[0]!.overSpeech).toBe(true);
+    expect(guns[0]!.start).toBeCloseTo(0, 6);
+    expect(guns[0]!.end).toBeCloseTo(3 * W, 6);
+  });
+});
