@@ -34,12 +34,12 @@ Stack: Vite, React, TypeScript (strict), Vitest with property-based tests (fast-
 
 The whole app was built spec-first in Kiro. Everything is in [`/.kiro`](.kiro):
 
-- **Spec** (`.kiro/specs/ghost-captions/`): requirements, design and a task list. The task list grew from 14 to 21 tasks as real-screen feedback came in: specific sound names, edge fog for ambient sounds, bigger ghosts, dialogue subtitles, hiding unknown sounds, and ghosts that follow the mute button.
+- **Spec** (`.kiro/specs/ghost-captions/`): requirements, design and a task list. The task list grew from 14 to 37 tasks as real-screen feedback came in: specific sound names, edge fog for ambient sounds, bigger ghosts, dialogue subtitles, hiding unknown sounds, ghosts that follow the mute button, an end card that counts what captions alone would have missed, a with/without comparison, and keeping sounds that happen under dialogue.
 - **Steering** (`.kiro/steering/project.md`): the product principles Kiro reads on every task — honesty over spectacle, information never only in motion or colour, the video never leaves the browser.
 - **Agent** (`.kiro/agents/builder.json`): a builder agent that may only read and write files and run the project's typecheck and test scripts.
-- **Hooks** (`.kiro/hooks/`): run module tests on save, review config and family-map changes, and scan for secrets before commit.
+- **Hooks** (`.kiro/hooks/`): three hooks are configured: run module tests on save, review config and family-map changes, and scan for secrets before commit. Most tasks were run through the Kiro CLI, where these IDE hooks do not fire, so we do not claim they ran on every change; the test suite itself was run before every commit.
 
-Kiro implemented the tasks one at a time, and each was committed only after typecheck and the full test suite passed (289 tests at the time of writing). A few small fixes found while checking the real screen were made by hand, with tests.
+Kiro implemented the tasks one at a time, and each was committed only after typecheck and the full test suite passed (495 tests at the time of writing). A few small fixes found while checking the real screen were made by hand, with tests.
 
 ## Run locally
 
@@ -52,7 +52,7 @@ npm run dev
 
 ## Credits
 
-- Demo clips: see [`public/demo/CREDITS.md`](public/demo/CREDITS.md) (Sintel trailer © Blender Foundation, CC BY 3.0; field recording in the public domain).
+- Demo clips: see [`public/demo/CREDITS.md`](public/demo/CREDITS.md) (Tears of Steel and Sintel © Blender Foundation, CC BY 3.0; field recording in the public domain).
 - Sound classifier: YAMNet, Apache License 2.0.
 - Ghost illustrations: see [`public/ghosts/README.md`](public/ghosts/README.md).
 
